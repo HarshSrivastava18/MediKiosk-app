@@ -22,6 +22,7 @@ import Badge from '../../../components/ui/Badge'
 import Button from '../../../components/ui/Button'
 import Tabs from '../../../components/ui/Tabs'
 import { hospitals } from '../../../data/hospitals'
+import { api } from '../../../lib/api'
 
 const defaultChecklist = [
   'Organization Legal Verification',
@@ -39,8 +40,16 @@ export default function Verification() {
   const [rejectModalHospital, setRejectModalHospital] = useState(null)
   const [rejectionReason, setRejectionReason] = useState('Missing updated Clinical Establishment Act renewal certificate.')
 
-  const handleApprove = (hospital) => {
+  const handleApprove = async (hospital) => {
     const orgId = `ORG-${Math.floor(100 + Math.random() * 900)}`
+    const adminEmail = `admin@${hospital.name.toLowerCase().replace(/[^a-z0-9]/g, '')}.org`
+
+    try {
+      await api.admin.submitVerificationDecision(hospital.id, 'approve', `Approved by Super Admin. Issued ID: ${orgId}`)
+    } catch (e) {
+      console.log('Local fallback verification update', e)
+    }
+
     setPending((prev) => prev.filter((p) => p.id !== hospital.id))
     setHistory((prev) => [
       {
@@ -55,14 +64,20 @@ export default function Verification() {
     setApprovedOrgCredentials({
       hospitalName: hospital.name,
       orgId,
-      adminEmail: `admin@${hospital.name.toLowerCase().replace(/[^a-z0-9]/g, '')}.org`,
-      initialSecret: 'MediKiosk#Auth2026',
+      adminEmail,
+      initialSecret: 'hospital123',
       fhirEndpoint: `https://api.medikiosk.in/v1/fhir/${orgId.toLowerCase()}`,
     })
     setSelectedHospital(null)
   }
 
-  const handleReject = (hospital) => {
+  const handleReject = async (hospital) => {
+    try {
+      await api.admin.submitVerificationDecision(hospital.id, 'reject', rejectionReason)
+    } catch (e) {
+      console.log('Local fallback rejection update', e)
+    }
+
     setPending((prev) => prev.filter((p) => p.id !== hospital.id))
     setHistory((prev) => [
       {

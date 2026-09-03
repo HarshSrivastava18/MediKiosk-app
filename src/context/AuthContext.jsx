@@ -4,6 +4,27 @@ import { AUTH_USERS } from '../data/authUsers'
 const AuthContext = createContext(null)
 
 const STORAGE_KEY = 'medikiosk_auth_user'
+const REGISTERED_USERS_KEY = 'medikiosk_registered_users'
+
+export function getRegisteredUsers() {
+  try {
+    const saved = localStorage.getItem(REGISTERED_USERS_KEY)
+    return saved ? JSON.parse(saved) : []
+  } catch {
+    return []
+  }
+}
+
+export function saveRegisteredUser(newUser) {
+  try {
+    const current = getRegisteredUsers()
+    const filtered = current.filter((u) => u.id !== newUser.id && u.username !== newUser.username && u.identifier !== newUser.identifier)
+    const updated = [newUser, ...filtered]
+    localStorage.setItem(REGISTERED_USERS_KEY, JSON.stringify(updated))
+  } catch (e) {
+    console.error('Error saving registered user', e)
+  }
+}
 
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(() => {
@@ -27,6 +48,11 @@ export function AuthProvider({ children }) {
     }
   }, [user])
 
+  const getAllUsers = () => {
+    const registered = getRegisteredUsers()
+    return [...registered, ...AUTH_USERS]
+  }
+
   const login = (role, identifier, password) => {
     const cleanId = (identifier || '').trim().toLowerCase()
     const cleanPass = (password || '').trim()
@@ -35,11 +61,14 @@ export function AuthProvider({ children }) {
       return { success: false, error: 'Please enter both your identifier/email and password.' }
     }
 
-    const matchedUser = AUTH_USERS.find((u) => {
+    const allUsers = getAllUsers()
+
+    const matchedUser = allUsers.find((u) => {
       const matchRole = role ? u.role.toLowerCase() === role.toLowerCase() : true
       const matchId =
-        u.username.toLowerCase() === cleanId ||
-        u.id.toLowerCase() === cleanId ||
+        (u.username && u.username.toLowerCase() === cleanId) ||
+        (u.identifier && u.identifier.toLowerCase() === cleanId) ||
+        (u.id && u.id.toLowerCase() === cleanId) ||
         (u.phone && u.phone === cleanId)
       const matchPass = u.password === cleanPass
 
@@ -48,18 +77,19 @@ export function AuthProvider({ children }) {
 
     if (!matchedUser) {
       // Check if user exists but wrong password
-      const userExists = AUTH_USERS.find((u) => {
+      const userExists = allUsers.find((u) => {
         const matchRole = role ? u.role.toLowerCase() === role.toLowerCase() : true
         return (
           matchRole &&
-          (u.username.toLowerCase() === cleanId ||
-            u.id.toLowerCase() === cleanId ||
+          ((u.username && u.username.toLowerCase() === cleanId) ||
+            (u.identifier && u.identifier.toLowerCase() === cleanId) ||
+            (u.id && u.id.toLowerCase() === cleanId) ||
             (u.phone && u.phone === cleanId))
         )
       })
 
       if (userExists) {
-        return { success: false, error: 'Incorrect password. Please verify your credentials.' }
+        return { success: false, error: 'Incorrect password. Please check your credentials.' }
       }
 
       return {
@@ -68,7 +98,6 @@ export function AuthProvider({ children }) {
       }
     }
 
-    // Clone user without sensitive fields if needed, or include token
     const authPayload = {
       ...matchedUser,
       token: `mk_jwt_${matchedUser.id}_${Date.now()}`,
@@ -77,6 +106,30 @@ export function AuthProvider({ children }) {
 
     setUser(authPayload)
     return { success: true, user: authPayload }
+  }
+
+  const registerPatientSession = (newPatientData) => {
+    const userPayload = {
+      id: newPatientData.id,
+      username: newPatientData.email || newPatientData.phone,
+      identifier: newPatientData.email || newPatientData.phone,
+      password: newPatientData.password || 'patient123',
+      role: 'patient',
+      name: newPatientData.name,
+      portalPath: '/patient',
+      title: 'Patient',
+      org: 'National Health Registry',
+      phone: newPatientData.phone,
+      details: {
+        dob: newPatientData.dob,
+        bloodGroup: newPatientData.bloodGroup,
+        gender: newPatientData.gender,
+        address: newPatientData.address
+      }
+    }
+
+    saveRegisteredUser(userPayload)
+    return userPayload
   }
 
   const logout = () => {
@@ -93,6 +146,7 @@ export function AuthProvider({ children }) {
     isAuthenticated: !!user,
     login,
     logout,
+    registerPatientSession,
     switchRole
   }
 

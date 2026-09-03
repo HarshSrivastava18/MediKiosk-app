@@ -1,48 +1,60 @@
 import { useState } from 'react'
-import { Pill, Clock, Calendar, Building2, User, Download, RefreshCw, CheckCircle } from 'lucide-react'
+import { Pill, Clock, Calendar, Building2, User, Download, RefreshCw, CheckCircle, Plus } from 'lucide-react'
 import Card, { CardHeader, CardBody } from '../../../components/ui/Card'
 import Badge from '../../../components/ui/Badge'
 import Button from '../../../components/ui/Button'
-
-const prescriptions = [
-  {
-    id: 'RX-2026-901',
-    doctor: 'Dr. Sharma',
-    department: 'Cardiology',
-    hospital: 'City Hospital - Lucknow Branch',
-    date: '15 Jul 2026',
-    status: 'Active',
-    items: [
-      { name: 'Amlodipine Besylate', dosage: '5 mg', freq: 'Once daily (Morning)', duration: '30 Days', instructions: 'Take with or after breakfast' },
-      { name: 'Aspirin (Ecosprin)', dosage: '75 mg', freq: 'Once daily (Night)', duration: '30 Days', instructions: 'Take post-dinner' },
-    ],
-  },
-  {
-    id: 'RX-2026-442',
-    doctor: 'Dr. Verma',
-    department: 'Pulmonology',
-    hospital: 'Apollo Clinic',
-    date: '10 Feb 2026',
-    status: 'Completed',
-    items: [
-      { name: 'Salbutamol Inhaler (Asthalin)', dosage: '100 mcg', freq: '2 puffs SOS', duration: 'As needed', instructions: 'Rinse mouth after inhalation' },
-      { name: 'Montelukast Sodium', dosage: '10 mg', freq: 'Once daily (Night)', duration: '14 Days', instructions: 'Take before bedtime' },
-    ],
-  },
-]
+import { useCurrentPatient } from '../useCurrentPatient'
 
 export default function Prescriptions() {
+  const { patient } = useCurrentPatient()
+
+  const defaultRx = [
+    {
+      id: 'RX-2026-901',
+      doctor: 'Dr. Sharma',
+      department: 'Cardiology',
+      hospital: 'City Hospital - Lucknow Branch',
+      date: '15 Jul 2026',
+      status: 'Active',
+      items: [
+        { name: 'Amlodipine Besylate', dosage: '5 mg', freq: 'Once daily (Morning)', duration: '30 Days', instructions: 'Take with or after breakfast' },
+        { name: 'Aspirin (Ecosprin)', dosage: '75 mg', freq: 'Once daily (Night)', duration: '30 Days', instructions: 'Take post-dinner' },
+      ],
+    }
+  ]
+
+  const patientMedsList = patient.medications?.length > 0 ? patient.medications.map((m, idx) => ({
+    name: m,
+    dosage: 'Standard Dosage',
+    freq: 'Once daily',
+    duration: 'Ongoing',
+    instructions: 'As advised by physician'
+  })) : []
+
+  const activePrescriptions = patient.prescriptions || (patientMedsList.length > 0 ? [
+    {
+      id: `RX-ACTIVE-${patient.id.slice(-4)}`,
+      doctor: 'Dr. Sharma',
+      department: 'General OPD',
+      hospital: 'National Health Network',
+      date: 'Active',
+      status: 'Active',
+      items: patientMedsList
+    },
+    ...defaultRx
+  ] : defaultRx)
+
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 p-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="page-title">Prescriptions & Active Medications</h1>
-          <p className="text-sm text-slate-500 mt-0.5">Verified digital prescriptions issued by attending doctors across network hospitals</p>
+          <p className="text-sm text-slate-500 mt-0.5">Verified digital prescriptions issued for {patient.name} ({patient.id})</p>
         </div>
       </div>
 
       <div className="space-y-4">
-        {prescriptions.map((rx) => (
+        {activePrescriptions.map((rx) => (
           <Card key={rx.id} className="overflow-hidden border border-slate-200">
             <CardHeader className="bg-slate-50/70 py-3.5">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -67,7 +79,7 @@ export default function Prescriptions() {
                   <span className="flex items-center gap-1">
                     <Calendar size={13} /> {rx.date}
                   </span>
-                  <Button variant="secondary" size="sm" className="text-xs">
+                  <Button variant="secondary" size="sm" className="text-xs" onClick={() => window.print()}>
                     <Download size={13} /> PDF
                   </Button>
                 </div>

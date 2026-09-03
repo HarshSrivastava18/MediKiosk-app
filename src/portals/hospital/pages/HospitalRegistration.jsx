@@ -22,6 +22,7 @@ import Card, { CardHeader, CardBody } from '../../../components/ui/Card'
 import Button from '../../../components/ui/Button'
 import Badge from '../../../components/ui/Badge'
 import Input from '../../../components/ui/Input'
+import { apiRequest } from '../../../lib/api'
 
 const statesList = [
   'Uttar Pradesh',
@@ -96,14 +97,41 @@ export default function HospitalRegistration() {
     }
   }
 
-  const handleSubmitApplication = () => {
+  const handleSubmitApplication = async () => {
     setIsSubmitting(true)
-    setTimeout(() => {
-      setIsSubmitting(false)
+    try {
+      const res = await apiRequest('/auth/register-hospital', {
+        method: 'POST',
+        body: JSON.stringify({
+          hospitalName,
+          hospitalType,
+          regNumber,
+          state,
+          city,
+          pincode,
+          officialEmail,
+          phone,
+          medicalSuperintendent,
+          branchesCount,
+          totalBeds,
+          icuBeds,
+          departments: selectedDepts
+        })
+      })
+
+      if (res?.trackingId) {
+        setTrackingId(res.trackingId)
+      } else {
+        const randomAppId = `APP-2026-${Math.floor(1000 + Math.random() * 9000)}`
+        setTrackingId(randomAppId)
+      }
+    } catch {
       const randomAppId = `APP-2026-${Math.floor(1000 + Math.random() * 9000)}`
       setTrackingId(randomAppId)
+    } finally {
+      setIsSubmitting(false)
       setStep(4)
-    }, 1200)
+    }
   }
 
   return (

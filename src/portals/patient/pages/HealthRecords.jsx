@@ -13,20 +13,24 @@ import {
 import Card, { CardHeader, CardBody } from '../../../components/ui/Card'
 import Badge from '../../../components/ui/Badge'
 import Timeline from '../../../components/ui/Timeline'
-import { patients } from '../../../data/patients'
-
-const patient = patients[0]
-
-const vitalsConfig = [
-  { label: 'Blood Pressure', value: patient.vitals.bp,       unit: 'mmHg',  icon: Heart,       color: 'bg-red-50 border-red-100',     iconClass: 'bg-red-100 text-red-600',     valClass: 'text-red-700' },
-  { label: 'Pulse Rate',     value: patient.vitals.pulse,    unit: 'bpm',   icon: Activity,    color: 'bg-blue-50 border-blue-100',   iconClass: 'bg-blue-100 text-blue-600',   valClass: 'text-blue-700' },
-  { label: 'SpO₂',          value: `${patient.vitals.spo2}%`,unit: 'oxygen',icon: Droplets,    color: 'bg-cyan-50 border-cyan-100',   iconClass: 'bg-cyan-100 text-cyan-600',   valClass: 'text-cyan-700' },
-  { label: 'Temperature',    value: patient.vitals.temp,     unit: '',      icon: Thermometer, color: 'bg-amber-50 border-amber-100', iconClass: 'bg-amber-100 text-amber-600', valClass: 'text-amber-700' },
-  { label: 'Weight',         value: patient.vitals.weight,   unit: '',      icon: Weight,      color: 'bg-violet-50 border-violet-100',iconClass:'bg-violet-100 text-violet-600',valClass: 'text-violet-700' },
-  { label: 'Height',         value: patient.vitals.height,   unit: '',      icon: Ruler,       color: 'bg-emerald-50 border-emerald-100',iconClass:'bg-emerald-100 text-emerald-600',valClass:'text-emerald-700'},
-]
+import { useCurrentPatient } from '../useCurrentPatient'
 
 export default function HealthRecords() {
+  const { patient } = useCurrentPatient()
+
+  const vitalsConfig = [
+    { label: 'Blood Pressure', value: patient.vitals?.bp || '120/80', unit: 'mmHg',  icon: Heart,       color: 'bg-red-50 border-red-100',     iconClass: 'bg-red-100 text-red-600',     valClass: 'text-red-700' },
+    { label: 'Pulse Rate',     value: patient.vitals?.pulse || 74,    unit: 'bpm',   icon: Activity,    color: 'bg-blue-50 border-blue-100',   iconClass: 'bg-blue-100 text-blue-600',   valClass: 'text-blue-700' },
+    { label: 'SpO₂',          value: `${patient.vitals?.spo2 || 98}%`,unit: 'oxygen',icon: Droplets,    color: 'bg-cyan-50 border-cyan-100',   iconClass: 'bg-cyan-100 text-cyan-600',   valClass: 'text-cyan-700' },
+    { label: 'Temperature',    value: patient.vitals?.temp || '98.6°F',unit: '',      icon: Thermometer, color: 'bg-amber-50 border-amber-100', iconClass: 'bg-amber-100 text-amber-600', valClass: 'text-amber-700' },
+    { label: 'Weight',         value: patient.vitals?.weight || '70 kg',unit: '',    icon: Weight,      color: 'bg-violet-50 border-violet-100',iconClass:'bg-violet-100 text-violet-600',valClass: 'text-violet-700' },
+    { label: 'Height',         value: patient.vitals?.height || "5'8\"",unit: '',    icon: Ruler,       color: 'bg-emerald-50 border-emerald-100',iconClass:'bg-emerald-100 text-emerald-600',valClass:'text-emerald-700'},
+  ]
+
+  const timelineEvents = patient.timeline || [
+    { date: 'Today', type: 'Registration', hospital: 'National Health Authority', summary: 'Patient Profile Initialized' }
+  ]
+
   return (
     <div className="p-6 space-y-6">
       {/* Header */}
@@ -35,7 +39,7 @@ export default function HealthRecords() {
           <h1 className="text-xl font-bold text-slate-800">Health Records</h1>
           <p className="text-slate-500 text-sm mt-0.5">Your complete medical history — secure &amp; always available</p>
         </div>
-        <Badge variant="primary" dot>Blood Group: {patient.bloodGroup}</Badge>
+        <Badge variant="primary" dot>Blood Group: {patient.bloodGroup || 'O+'}</Badge>
       </div>
 
       {/* Vitals Card */}
@@ -76,7 +80,7 @@ export default function HealthRecords() {
             <h2 className="text-sm font-semibold text-slate-800">Medical Timeline</h2>
           </CardHeader>
           <CardBody>
-            <Timeline events={patient.timeline} />
+            <Timeline events={timelineEvents} />
           </CardBody>
         </Card>
 
@@ -91,12 +95,16 @@ export default function HealthRecords() {
               </div>
             </CardHeader>
             <CardBody className="space-y-2">
-              {patient.conditions.map((c) => (
-                <div key={c} className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-100 rounded-lg">
-                  <span className="w-1.5 h-1.5 bg-red-500 rounded-full flex-shrink-0" />
-                  <span className="text-sm text-red-700 font-medium">{c}</span>
-                </div>
-              ))}
+              {patient.conditions && patient.conditions.length > 0 ? (
+                patient.conditions.map((c) => (
+                  <div key={c} className="flex items-center gap-2 px-3 py-2 bg-red-50 border border-red-100 rounded-lg">
+                    <span className="w-1.5 h-1.5 bg-red-500 rounded-full flex-shrink-0" />
+                    <span className="text-sm text-red-700 font-medium">{c}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-slate-400">No active chronic conditions registered.</p>
+              )}
             </CardBody>
           </Card>
 
@@ -109,12 +117,16 @@ export default function HealthRecords() {
               </div>
             </CardHeader>
             <CardBody className="space-y-2">
-              {patient.medications.map((m) => (
-                <div key={m} className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg">
-                  <span className="w-1.5 h-1.5 bg-blue-500 rounded-full flex-shrink-0" />
-                  <span className="text-sm text-blue-700 font-medium">{m}</span>
-                </div>
-              ))}
+              {patient.medications && patient.medications.length > 0 ? (
+                patient.medications.map((m) => (
+                  <div key={m} className="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-100 rounded-lg">
+                    <span className="w-1.5 h-1.5 bg-blue-500 rounded-full flex-shrink-0" />
+                    <span className="text-sm text-blue-700 font-medium">{m}</span>
+                  </div>
+                ))
+              ) : (
+                <p className="text-xs text-slate-400">No routine medications recorded.</p>
+              )}
             </CardBody>
           </Card>
 
@@ -127,14 +139,16 @@ export default function HealthRecords() {
               </div>
             </CardHeader>
             <CardBody className="space-y-2">
-              {patient.allergies.length === 0 ? (
+              {!patient.allergies || patient.allergies.length === 0 ? (
                 <p className="text-sm text-slate-400">No known allergies</p>
-              ) : patient.allergies.map((a) => (
-                <div key={a} className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-100 rounded-lg">
-                  <span className="w-1.5 h-1.5 bg-amber-500 rounded-full flex-shrink-0" />
-                  <span className="text-sm text-amber-700 font-medium">{a}</span>
-                </div>
-              ))}
+              ) : (
+                patient.allergies.map((a) => (
+                  <div key={a} className="flex items-center gap-2 px-3 py-2 bg-amber-50 border border-amber-100 rounded-lg">
+                    <span className="w-1.5 h-1.5 bg-amber-500 rounded-full flex-shrink-0" />
+                    <span className="text-sm text-amber-700 font-medium">{a}</span>
+                  </div>
+                ))
+              )}
             </CardBody>
           </Card>
         </div>

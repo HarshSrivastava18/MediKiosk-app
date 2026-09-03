@@ -20,9 +20,7 @@ import Card, { CardHeader, CardBody } from '../../../components/ui/Card'
 import Button from '../../../components/ui/Button'
 import Badge from '../../../components/ui/Badge'
 import Avatar from '../../../components/ui/Avatar'
-import { patients } from '../../../data/patients'
-
-const patient = patients[0]
+import { useCurrentPatient } from '../useCurrentPatient'
 
 const quickActions = [
   {
@@ -33,7 +31,7 @@ const quickActions = [
     textColor: 'text-white',
     descColor: 'text-blue-100',
     btnLabel: 'Start Now →',
-    btnStyle: 'bg-white text-blue-700 hover:bg-blue-50 font-semibold px-4 py-1.5 rounded-lg text-sm transition-colors',
+    btnStyle: 'bg-white text-blue-700 hover:bg-blue-50 font-semibold px-4 py-1.5 rounded-lg text-sm transition-colors cursor-pointer',
     to: '/patient/my-case',
   },
   {
@@ -44,7 +42,7 @@ const quickActions = [
     textColor: 'text-white',
     descColor: 'text-emerald-100',
     btnLabel: 'View Records',
-    btnStyle: 'bg-white text-emerald-700 hover:bg-emerald-50 font-semibold px-4 py-1.5 rounded-lg text-sm transition-colors',
+    btnStyle: 'bg-white text-emerald-700 hover:bg-emerald-50 font-semibold px-4 py-1.5 rounded-lg text-sm transition-colors cursor-pointer',
     to: '/patient/health-records',
   },
   {
@@ -55,7 +53,7 @@ const quickActions = [
     textColor: 'text-white',
     descColor: 'text-violet-100',
     btnLabel: 'View Documents',
-    btnStyle: 'bg-white text-violet-700 hover:bg-violet-50 font-semibold px-4 py-1.5 rounded-lg text-sm transition-colors',
+    btnStyle: 'bg-white text-violet-700 hover:bg-violet-50 font-semibold px-4 py-1.5 rounded-lg text-sm transition-colors cursor-pointer',
     to: '/patient/documents',
   },
   {
@@ -66,28 +64,37 @@ const quickActions = [
     textColor: 'text-white',
     descColor: 'text-amber-100',
     btnLabel: 'View Visits',
-    btnStyle: 'bg-white text-amber-700 hover:bg-amber-50 font-semibold px-4 py-1.5 rounded-lg text-sm transition-colors',
+    btnStyle: 'bg-white text-amber-700 hover:bg-amber-50 font-semibold px-4 py-1.5 rounded-lg text-sm transition-colors cursor-pointer',
     to: '/patient/hospital-visits',
   },
 ]
 
-const healthSummaryRows = [
-  { label: 'Conditions',  value: patient.conditions.length,  color: 'bg-red-50 border-red-200',    icon: Heart,     iconClass: 'text-red-500 bg-red-100',    valClass: 'text-red-700' },
-  { label: 'Medications', value: patient.medications.length, color: 'bg-blue-50 border-blue-200',  icon: Pill,      iconClass: 'text-blue-500 bg-blue-100',  valClass: 'text-blue-700' },
-  { label: 'Allergies',   value: patient.allergies.length,   color: 'bg-amber-50 border-amber-200',icon: AlertTriangle, iconClass: 'text-amber-500 bg-amber-100', valClass: 'text-amber-700' },
-  { label: 'Surgeries',   value: 0,                          color: 'bg-slate-50 border-slate-200',icon: Activity,  iconClass: 'text-slate-400 bg-slate-100', valClass: 'text-slate-600' },
-]
-
-const recentActivity = [
-  { id: 1, icon: FlaskConical, iconBg: 'bg-amber-100 text-amber-600', label: 'Blood Report uploaded',           date: '02 Jun 2026', sub: 'Lab — City Hospital, Lucknow' },
-  { id: 2, icon: FileText,     iconBg: 'bg-violet-100 text-violet-600', label: 'Prescription uploaded',          date: '10 Feb 2026', sub: 'Amlodipine 5mg renewed' },
-  { id: 3, icon: Building2,    iconBg: 'bg-blue-100 text-blue-600',   label: 'Hospital visit — Chest pain',     date: '15 Jul 2026', sub: 'City Hospital, Lucknow' },
-  { id: 4, icon: Zap,          iconBg: 'bg-emerald-100 text-emerald-600', label: 'AI case generated',            date: '15 Jul 2026', sub: 'Chief complaint: Chest pain + Breathlessness' },
-  { id: 5, icon: Activity,     iconBg: 'bg-blue-100 text-blue-600',   label: 'Follow-up visit — Hypertension',  date: '18 Apr 2026', sub: 'City Hospital, Lucknow' },
-]
-
 export default function PatientDashboard() {
   const navigate = useNavigate()
+  const { patient } = useCurrentPatient()
+
+  const firstName = patient.name.split(' ')[0] || 'User'
+  const conditionsCount = patient.conditions ? patient.conditions.length : 0
+  const medicationsCount = patient.medications ? patient.medications.length : 0
+  const allergiesCount = patient.allergies ? patient.allergies.length : 0
+
+  const healthSummaryRows = [
+    { label: 'Conditions',  value: conditionsCount,  color: 'bg-red-50 border-red-200',    icon: Heart,     iconClass: 'text-red-500 bg-red-100',    valClass: 'text-red-700' },
+    { label: 'Medications', value: medicationsCount, color: 'bg-blue-50 border-blue-200',  icon: Pill,      iconClass: 'text-blue-500 bg-blue-100',  valClass: 'text-blue-700' },
+    { label: 'Allergies',   value: allergiesCount,   color: 'bg-amber-50 border-amber-200',icon: AlertTriangle, iconClass: 'text-amber-500 bg-amber-100', valClass: 'text-amber-700' },
+    { label: 'Surgeries',   value: 0,                color: 'bg-slate-50 border-slate-200',icon: Activity,  iconClass: 'text-slate-400 bg-slate-100', valClass: 'text-slate-600' },
+  ]
+
+  const recentActivity = patient.timeline?.length > 0 ? patient.timeline.map((item, idx) => ({
+    id: idx,
+    icon: item.type === 'Prescription' ? Pill : item.type === 'Document' ? FileText : item.type === 'Registration' ? Shield : Building2,
+    iconBg: item.type === 'Prescription' ? 'bg-violet-100 text-violet-600' : item.type === 'Document' ? 'bg-amber-100 text-amber-600' : 'bg-blue-100 text-blue-600',
+    label: item.title || item.label || item.summary || 'Clinical Record',
+    date: item.date || 'Recent',
+    sub: item.hospital || item.summary || 'National Health System'
+  })) : [
+    { id: 1, icon: Shield, iconBg: 'bg-emerald-100 text-emerald-600', label: 'Global Patient ID Active', date: 'Today', sub: 'National Health Authority' }
+  ]
 
   return (
     <div className="p-6 space-y-6">
@@ -95,12 +102,12 @@ export default function PatientDashboard() {
       {/* ── Greeting row ── */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold text-slate-800">Good Morning, Rahul 👋</h1>
-          <p className="text-slate-500 text-sm mt-1">Here's your health summary for today.</p>
+          <h1 className="text-2xl font-bold text-slate-800">Welcome, {firstName} 👋</h1>
+          <p className="text-slate-500 text-sm mt-1">Here's your live personal health summary for today.</p>
         </div>
         <span className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-700 px-3 py-1.5 rounded-full text-xs font-semibold">
           <span className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
-          MK-8472-9812-3345
+          {patient.id}
         </span>
       </div>
 
@@ -138,8 +145,8 @@ export default function PatientDashboard() {
         <Card className="xl:col-span-2">
           <CardHeader>
             <div className="flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-slate-800">Recent Activity</h2>
-              <Badge variant="blue">Last 90 days</Badge>
+              <h2 className="text-sm font-semibold text-slate-800">Recent Medical Activity</h2>
+              <Badge variant="blue">Updated Live</Badge>
             </div>
           </CardHeader>
           <CardBody className="p-0">
@@ -192,10 +199,10 @@ export default function PatientDashboard() {
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wide mb-2">Latest Vitals</p>
               <div className="grid grid-cols-2 gap-2">
                 {[
-                  { label: 'Blood Pressure', value: patient.vitals.bp, unit: 'mmHg', color: 'text-red-600' },
-                  { label: 'Pulse',          value: patient.vitals.pulse, unit: 'bpm', color: 'text-blue-600' },
-                  { label: 'SpO₂',          value: `${patient.vitals.spo2}%`, unit: '', color: 'text-emerald-600' },
-                  { label: 'Weight',         value: patient.vitals.weight, unit: '', color: 'text-amber-600' },
+                  { label: 'Blood Pressure', value: patient.vitals?.bp || '120/80', unit: 'mmHg', color: 'text-red-600' },
+                  { label: 'Pulse',          value: patient.vitals?.pulse || 74,    unit: 'bpm',  color: 'text-blue-600' },
+                  { label: 'SpO₂',          value: `${patient.vitals?.spo2 || 98}%`, unit: '',    color: 'text-emerald-600' },
+                  { label: 'Weight',         value: patient.vitals?.weight || '70 kg', unit: '',   color: 'text-amber-600' },
                 ].map((v) => (
                   <div key={v.label} className="bg-slate-50 rounded-lg px-2.5 py-2">
                     <p className="text-xs text-slate-500 truncate">{v.label}</p>
@@ -223,7 +230,7 @@ export default function PatientDashboard() {
         </div>
         <button
           onClick={() => navigate('/patient/consent')}
-          className="flex-shrink-0 bg-white text-blue-700 font-semibold px-4 py-2 rounded-lg text-sm hover:bg-blue-50 transition-colors whitespace-nowrap"
+          className="flex-shrink-0 bg-white text-blue-700 font-semibold px-4 py-2 rounded-lg text-sm hover:bg-blue-50 transition-colors whitespace-nowrap cursor-pointer"
         >
           Manage Consent
         </button>

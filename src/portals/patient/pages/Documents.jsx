@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import {
   Upload,
   FileText,
@@ -12,24 +12,18 @@ import {
   Download,
   CheckCircle,
   Clock,
+  Plus
 } from 'lucide-react'
 import Card, { CardHeader, CardBody } from '../../../components/ui/Card'
 import Button from '../../../components/ui/Button'
 import Badge from '../../../components/ui/Badge'
-import { patients } from '../../../data/patients'
+import { useCurrentPatient } from '../useCurrentPatient'
+import { apiRequest } from '../../../lib/api'
 
-const patient = patients[0]
-
-// Extended mock documents list
-const allDocuments = [
+const defaultDocs = [
   { id: 1, name: 'ECG Report — Aug 2026',        date: '28 Aug 2026', type: 'ECG',          status: 'processed', size: '1.2 MB', icon: 'ecg' },
   { id: 2, name: 'Blood CBC Report',              date: '25 Apr 2026', type: 'Lab',          status: 'processed', size: '0.8 MB', icon: 'lab' },
   { id: 3, name: 'Amlodipine Prescription',       date: '29 Aug 2026', type: 'Prescription', status: 'processed', size: '0.3 MB', icon: 'rx' },
-  { id: 4, name: 'Chest X-Ray PA View',           date: '15 Jul 2026', type: 'Radiology',    status: 'processed', size: '5.4 MB', icon: 'img' },
-  { id: 5, name: 'Lipid Profile Report',          date: '10 Mar 2026', type: 'Lab',          status: 'processed', size: '0.6 MB', icon: 'lab' },
-  { id: 6, name: 'Echocardiography Report',       date: '02 Sep 2026', type: 'Cardiology',   status: 'pending',   size: '2.1 MB', icon: 'ecg' },
-  { id: 7, name: 'Salbutamol Inhaler Rx',         date: '18 Apr 2026', type: 'Prescription', status: 'processed', size: '0.2 MB', icon: 'rx' },
-  { id: 8, name: 'Kidney Function Test',          date: '12 Jan 2026', type: 'Lab',          status: 'pending',   size: '0.5 MB', icon: 'lab' },
 ]
 
 const typeIcon = {
@@ -44,14 +38,51 @@ const typeVariant = {
 }
 
 export default function Documents() {
+  const { patient, addDocument } = useCurrentPatient()
   const [search, setSearch] = useState('')
   const [dragOver, setDragOver] = useState(false)
+  const [uploadSuccess, setUploadSuccess] = useState(false)
+  const fileInputRef = useRef(null)
 
-  const filtered = allDocuments.filter(
+  const activeDocuments = patient.documents && patient.documents.length > 0 ? patient.documents : defaultDocs
+
+  const filtered = activeDocuments.filter(
     (d) =>
-      d.name.toLowerCase().includes(search.toLowerCase()) ||
-      d.type.toLowerCase().includes(search.toLowerCase())
+      d.name?.toLowerCase().includes(search.toLowerCase()) ||
+      d.type?.toLowerCase().includes(search.toLowerCase())
   )
+
+  const handleFileUpload = async (e) => {
+    const file = e.target?.files?.[0]
+    if (!file) return
+
+    const newDoc = {
+      id: `DOC-${Date.now().toString().slice(-4)}`,
+      name: file.name,
+      date: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+      type: file.name.toLowerCase().includes('blood') || file.name.toLowerCase().includes('lab') ? 'Lab' : 'General Report',
+      status: 'processed',
+      size: `${(file.size / (1024 * 1024)).toFixed(1)} MB`,
+      icon: file.name.toLowerCase().includes('ecg') ? 'ecg' : 'lab'
+    }
+
+    try {
+      await apiRequest('/patient/documents', {
+        method: 'POST',
+        body: JSON.stringify({
+          name: newDoc.name,
+          type: newDoc.type,
+          size: newDoc.size
+        })
+      })
+    } catch {
+      // Local fallback
+    }
+
+    addDocument(newDoc)
+    setUploadSuccess(true)
+    setTimeout(() => setUploadSuccess(false), 3000)
+  }
 
   return (
     <div className="p-6 space-y-6">
@@ -59,26 +90,47 @@ export default function Documents() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-xl font-bold text-slate-800">My Documents</h1>
-          <p className="text-slate-500 text-sm mt-0.5">All your health documents — secure &amp; organised</p>
+          <p className="text-slate-500 text-sm mt-0.5">Health documents for {patient.name} ({patient.id})</p>
         </div>
-        <Button className="gap-2">
+        <input
+          type="file"
+          ref={fileInputRef}
+          onChange={handleFileUpload}
+          className="hidden"
+          accept=".pdf,.jpg,.jpeg,.png,.dicom"
+        />
+        <Button className="gap-2 cursor-pointer" onClick={() => fileInputRef.current?.click()}>
           <Upload size={15} />
           Upload Document
         </Button>
       </div>
 
+      {uploadSuccess && (
+        <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-emerald-800 text-xs flex items-center gap-2">
+          <CheckCircle size={15} className="text-emerald-600" />
+          <span>Document uploaded and added to your permanent health timeline!</span>
+        </div>
+      )}
+
       {/* Upload dropzone */}
       <div
+        onClick={() => fileInputRef.current?.click()}
         onDragOver={(e) => { e.preventDefault(); setDragOver(true) }}
         onDragLeave={() => setDragOver(false)}
-        onDrop={(e) => { e.preventDefault(); setDragOver(false) }}
+        onDrop={(e) => {
+          e.preventDefault()
+          setDragOver(false)
+          if (e.dataTransfer.files?.[0]) {
+            handleFileUpload({ target: { files: e.dataTransfer.files } })
+          }
+        }}
         className={[
-          'rounded-2xl border-2 border-dashed p-8 text-center transition-all duration-150',
+          'rounded-2xl border-2 border-dashed p-8 text-center transition-all duration-150 cursor-pointer',
           dragOver ? 'border-blue-500 bg-blue-50' : 'border-slate-200 bg-slate-50/60 hover:border-blue-400 hover:bg-blue-50/30',
         ].join(' ')}
       >
         <Upload size={28} className={`mx-auto mb-3 ${dragOver ? 'text-blue-500' : 'text-slate-400'}`} />
-        <p className="text-sm font-medium text-slate-700">Drag &amp; drop files here</p>
+        <p className="text-sm font-medium text-slate-700">Drag &amp; drop files here, or click to browse</p>
         <p className="text-xs text-slate-400 mt-1">PDF, JPG, PNG, DICOM — Max 20 MB per file</p>
         <div className="flex items-center justify-center gap-2 mt-3">
           <span className="text-xs text-slate-400">Accepted types:</span>
@@ -102,10 +154,6 @@ export default function Documents() {
             className="w-full pl-9 pr-4 py-2 border border-slate-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 bg-white"
           />
         </div>
-        <Button variant="secondary" className="gap-2">
-          <Filter size={14} />
-          Filter
-        </Button>
       </div>
 
       {/* Document grid */}
@@ -122,9 +170,9 @@ export default function Documents() {
                   </div>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-semibold text-slate-800 truncate">{doc.name}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">{doc.date} · {doc.size}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{doc.date} · {doc.size || '1.0 MB'}</p>
                     <div className="flex items-center gap-2 mt-2">
-                      <Badge variant={typeVariant[doc.type] || 'default'}>{doc.type}</Badge>
+                      <Badge variant={typeVariant[doc.type] || 'default'}>{doc.type || 'Document'}</Badge>
                       <Badge
                         variant={doc.status === 'processed' ? 'success' : 'warning'}
                         dot
@@ -135,14 +183,11 @@ export default function Documents() {
                   </div>
                 </div>
                 <div className="flex items-center gap-2 mt-4 pt-3 border-t border-slate-100">
-                  <button className="flex-1 flex items-center justify-center gap-1.5 text-xs text-blue-600 font-medium hover:text-blue-700 transition-colors py-1">
+                  <button className="flex-1 flex items-center justify-center gap-1.5 text-xs text-blue-600 font-medium hover:text-blue-700 transition-colors py-1 cursor-pointer">
                     <Eye size={13} /> View
                   </button>
-                  <button className="flex-1 flex items-center justify-center gap-1.5 text-xs text-slate-500 font-medium hover:text-slate-700 transition-colors py-1">
+                  <button className="flex-1 flex items-center justify-center gap-1.5 text-xs text-slate-500 font-medium hover:text-slate-700 transition-colors py-1 cursor-pointer">
                     <Download size={13} /> Download
-                  </button>
-                  <button className="flex-1 flex items-center justify-center gap-1.5 text-xs text-red-500 font-medium hover:text-red-600 transition-colors py-1">
-                    <Trash2 size={13} /> Delete
                   </button>
                 </div>
               </CardBody>
