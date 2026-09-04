@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import {
   ArrowLeft,
@@ -77,6 +77,19 @@ function ActionRow({ icon: Icon, label, color = 'text-brand-600 bg-brand-50', on
 
 // ─── AI Case Summary Tab ─────────────────────────────────────────────────────
 function AICaseSummaryTab({ patient }) {
+  const [liveCase, setLiveCase] = useState(null)
+
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem('medikiosk_active_case_summary')
+      if (saved) {
+        setLiveCase(JSON.parse(saved))
+      }
+    } catch (e) {
+      // ignore
+    }
+  }, [])
+
   return (
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
 
@@ -102,7 +115,11 @@ function AICaseSummaryTab({ patient }) {
                 </div>
                 <p className="font-semibold text-slate-800">Clinical Overview</p>
               </div>
-              <Badge variant="primary" dot>AI Processed</Badge>
+              {liveCase ? (
+                <Badge variant="success" dot>Live Kiosk Intake Received</Badge>
+              ) : (
+                <Badge variant="primary" dot>AI Processed</Badge>
+              )}
             </div>
           </CardHeader>
           <CardBody className="space-y-5">
@@ -111,7 +128,7 @@ function AICaseSummaryTab({ patient }) {
             <div>
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Chief Complaint</p>
               <p className="text-sm text-slate-800 font-medium bg-slate-50 rounded-lg px-3 py-2">
-                Chest pain for 2 days
+                {liveCase?.chiefComplaint || patient?.complaint || 'Chest pain for 2 days'}
               </p>
             </div>
 
@@ -119,7 +136,7 @@ function AICaseSummaryTab({ patient }) {
             <div>
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">History of Present Illness</p>
               <p className="text-sm text-slate-700 leading-relaxed bg-slate-50 rounded-lg px-3 py-2">
-                Intermittent chest discomfort since yesterday, increases on exertion with associated breathlessness. Patient reports discomfort radiating to the left arm during episodes. No fever, no cough. Episodes last 5–10 minutes and are relieved by rest.
+                {liveCase?.historyOfPresentIllness || liveCase?.soap?.subjective || 'Intermittent chest discomfort since yesterday, increases on exertion with associated breathlessness. Patient reports discomfort radiating to the left arm during episodes. No fever, no cough. Episodes last 5–10 minutes and are relieved by rest.'}
               </p>
             </div>
 
@@ -127,7 +144,7 @@ function AICaseSummaryTab({ patient }) {
             <div>
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Associated Symptoms</p>
               <div className="flex flex-wrap gap-2">
-                {['Breathlessness', 'Fatigue', 'Diaphoresis', 'Mild Nausea'].map(s => (
+                {(liveCase?.associatedSymptoms || ['Breathlessness', 'Fatigue', 'Diaphoresis', 'Mild Nausea']).map(s => (
                   <Badge key={s} variant="warning">{s}</Badge>
                 ))}
               </div>
@@ -137,7 +154,7 @@ function AICaseSummaryTab({ patient }) {
             <div>
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Relevant History</p>
               <div className="space-y-1.5">
-                {['Hypertension (diagnosed 2 years ago, on Amlodipine 5mg)', 'Mild Asthma (controlled, on Salbutamol PRN)', 'No prior cardiac events reported'].map((h, i) => (
+                {(liveCase?.relevantHistory || ['Hypertension (diagnosed 2 years ago, on Amlodipine 5mg)', 'Mild Asthma (controlled, on Salbutamol PRN)', 'No prior cardiac events reported']).map((h, i) => (
                   <div key={i} className="flex items-start gap-2 text-sm text-slate-700">
                     <div className="w-1.5 h-1.5 rounded-full bg-brand-500 flex-shrink-0 mt-1.5" />
                     {h}
@@ -161,12 +178,12 @@ function AICaseSummaryTab({ patient }) {
           <CardBody>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
               {[
-                { label: 'Pain Type',     value: 'Sharp / Pressure-like' },
-                { label: 'Severity',      value: 'Moderate (6/10)' },
-                { label: 'Duration',      value: '2 Days' },
-                { label: 'Radiation',     value: 'Left Arm' },
-                { label: 'Triggered By',  value: 'Physical Activity' },
-                { label: 'Relieved By',   value: 'Rest' },
+                { label: 'Pain Type',     value: liveCase ? (liveCase.painScore >= 7 ? 'Severe / Radiating' : 'Moderate / Pressure') : 'Sharp / Pressure-like' },
+                { label: 'Severity',      value: liveCase ? `${liveCase.severityLabel} (${liveCase.painScore}/10)` : 'Moderate (6/10)' },
+                { label: 'Duration',      value: liveCase?.duration || '2 Days' },
+                { label: 'Risk Stratification', value: liveCase?.redFlags?.severity ? `${liveCase.redFlags.severity} Risk` : 'High Risk' },
+                { label: 'Intake Engine',  value: 'Google Speech + Triage' },
+                { label: 'API Quota Used', value: '0 Tokens (Free Native)' },
               ].map(item => (
                 <div key={item.label} className="bg-slate-50 rounded-xl p-3">
                   <p className="text-xs text-slate-400 font-medium mb-0.5">{item.label}</p>
