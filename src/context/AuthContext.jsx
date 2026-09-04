@@ -1,5 +1,6 @@
 import { createContext, useContext, useState, useEffect } from 'react'
 import { AUTH_USERS } from '../data/authUsers'
+import { api } from '../lib/api'
 
 const AuthContext = createContext(null)
 
@@ -53,22 +54,51 @@ export function AuthProvider({ children }) {
     return [...registered, ...AUTH_USERS]
   }
 
-  const login = (role, identifier, password) => {
-    const cleanId = (identifier || '').trim().toLowerCase()
+  const login = async (role, identifier, password) => {
+    const cleanId = (identifier || '').trim()
     const cleanPass = (password || '').trim()
 
     if (!cleanId || !cleanPass) {
       return { success: false, error: 'Please enter both your identifier/email and password.' }
     }
 
+    // 1. Authenticate with live PostgreSQL via FastAPI
+    try {
+      const res = await api.auth.login(role, cleanId, cleanPass)
+      if (res?.token && res?.user) {
+        localStorage.setItem('medikiosk_auth_token', res.token)
+        const authPayload = {
+          id: res.user.id,
+          username: res.user.email || res.user.id,
+          identifier: res.user.email || res.user.id,
+          name: res.user.name,
+          role: res.user.role || role,
+          portalPath: `/${res.user.role || role}`,
+          token: res.token,
+          details: res.patient || res.user,
+          loggedInAt: new Date().toISOString()
+        }
+        setUser(authPayload)
+        return { success: true, user: authPayload }
+      }
+    } catch (apiErr) {
+      const msg = apiErr.message || ''
+      // If backend explicitly rejected (e.g. pending hospital application, rejected, or invalid hospital)
+      if (msg.includes('PENDING') || msg.includes('REJECTED') || msg.includes('Invalid Hospital')) {
+        return { success: false, error: msg }
+      }
+    }
+
+    // 2. Local fallback for demo mock users (e.g. doctor, super admin)
+    const lowerCleanId = cleanId.toLowerCase()
     const allUsers = getAllUsers()
 
     const matchedUser = allUsers.find((u) => {
       const matchRole = role ? u.role.toLowerCase() === role.toLowerCase() : true
       const matchId =
-        (u.username && u.username.toLowerCase() === cleanId) ||
-        (u.identifier && u.identifier.toLowerCase() === cleanId) ||
-        (u.id && u.id.toLowerCase() === cleanId) ||
+        (u.username && u.username.toLowerCase() === lowerCleanId) ||
+        (u.identifier && u.identifier.toLowerCase() === lowerCleanId) ||
+        (u.id && u.id.toLowerCase() === lowerCleanId) ||
         (u.phone && u.phone === cleanId)
       const matchPass = u.password === cleanPass
 
@@ -81,9 +111,9 @@ export function AuthProvider({ children }) {
         const matchRole = role ? u.role.toLowerCase() === role.toLowerCase() : true
         return (
           matchRole &&
-          ((u.username && u.username.toLowerCase() === cleanId) ||
-            (u.identifier && u.identifier.toLowerCase() === cleanId) ||
-            (u.id && u.id.toLowerCase() === cleanId) ||
+          ((u.username && u.username.toLowerCase() === lowerCleanId) ||
+            (u.identifier && u.identifier.toLowerCase() === lowerCleanId) ||
+            (u.id && u.id.toLowerCase() === lowerCleanId) ||
             (u.phone && u.phone === cleanId))
         )
       })

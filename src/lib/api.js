@@ -69,6 +69,15 @@ export const api = {
       })
   },
   hospital: {
+    register: (hospitalData) =>
+      apiRequest('/hospitals/register', {
+        method: 'POST',
+        body: JSON.stringify(hospitalData)
+      }),
+    getApplications: (status) =>
+      apiRequest(`/hospitals/applications${status ? `?status=${status}` : ''}`),
+    getApplication: (id) =>
+      apiRequest(`/hospitals/applications/${id}`),
     getDashboard: () => apiRequest('/hospital/dashboard'),
     getBranches: () => apiRequest('/hospital/branches'),
     createBranch: (branchData) =>
@@ -85,11 +94,17 @@ export const api = {
   },
   admin: {
     getDashboard: () => apiRequest('/admin/dashboard'),
-    getVerificationQueue: () => apiRequest('/admin/verification/queue'),
-    submitVerificationDecision: (id, action, comments) =>
+    getVerificationQueue: (status = 'pending') =>
+      apiRequest(`/hospitals/applications?status=${status}`),
+    submitVerificationDecision: (id, action, comments, initialPassword = 'Hospital@2026') =>
       apiRequest(`/admin/verification/${id}/decision`, {
         method: 'POST',
-        body: JSON.stringify({ action, comments })
+        body: JSON.stringify({
+          action,
+          comments,
+          rejection_reason: comments,
+          initial_password: initialPassword
+        })
       }),
     getAuditLogs: () => apiRequest('/admin/audit-logs'),
     getUsers: () => apiRequest('/admin/users')

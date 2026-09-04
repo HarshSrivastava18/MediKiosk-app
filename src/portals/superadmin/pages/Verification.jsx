@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import {
   CheckCircle,
   XCircle,
@@ -15,13 +15,14 @@ import {
   Key,
   ExternalLink,
   Download,
-  AlertTriangle
+  AlertTriangle,
+  Database
 } from 'lucide-react'
 import Card, { CardHeader, CardBody } from '../../../components/ui/Card'
 import Badge from '../../../components/ui/Badge'
 import Button from '../../../components/ui/Button'
 import Tabs from '../../../components/ui/Tabs'
-import { hospitals } from '../../../data/hospitals'
+import { hospitals as fallbackHospitals } from '../../../data/hospitals'
 import { api } from '../../../lib/api'
 
 const defaultChecklist = [
@@ -33,31 +34,89 @@ const defaultChecklist = [
 ]
 
 export default function Verification() {
-  const [pending, setPending] = useState(hospitals.filter((h) => h.status === 'pending'))
+  const [pending, setPending] = useState([])
   const [history, setHistory] = useState([])
   const [selectedHospital, setSelectedHospital] = useState(null)
   const [approvedOrgCredentials, setApprovedOrgCredentials] = useState(null)
   const [rejectModalHospital, setRejectModalHospital] = useState(null)
   const [rejectionReason, setRejectionReason] = useState('Missing updated Clinical Establishment Act renewal certificate.')
+  const [isLoading, setIsLoading] = useState(true)
 
-  const handleApprove = async (hospital) => {
-    const orgId = `ORG-${Math.floor(100 + Math.random() * 900)}`
-    const adminEmail = `admin@${hospital.name.toLowerCase().replace(/[^a-z0-9]/g, '')}.org`
+  // Fetch live applications directly from PostgreSQL
+  useEffect(() => {
+    let isMounted = true
 
-    try {
-      await api.admin.submitVerificationDecision(hospital.id, 'approve', `Approved by Super Admin. Issued ID: ${orgId}`)
-    } catch (e) {
-      console.log('Local fallback verification update', e)
+    async function fetchApplications() {
+      try {
+        const apps = await api.admin.getVerificationQueue('pending')
+        if (apps && isMounted && apps.length > 0) {
+          const formatted = apps.map((a) => ({
+            id: a.application_id,
+            application_id: a.application_id,
+            name: a.hospital_name,
+            hospital_name: a.hospital_name,
+            type: a.hospital_type || 'Private',
+            city: a.city || 'Lucknow',
+            state: a.state || 'Uttar Pradesh',
+            regDate: a.submitted_at ? new Date(a.submitted_at).toLocaleDateString() : 'Today',
+            regNumber: a.registration_number,
+            officialEmail: a.official_email,
+            phone: a.phone,
+            medicalSuperintendent: a.medical_superintendent,
+            infrastructure: a.infrastructure || { total_beds: 0, icu_beds: 0, branches_count: 1 },
+            departments: a.departments || [],
+            documents: a.documents || [],
+            status: a.status,
+            source: 'postgresql'
+          }))
+          setPending(formatted)
+        } else if (isMounted) {
+          // Fallback if empty
+          setPending(fallbackHospitals.filter((h) => h.status === 'pending'))
+        }
+      } catch (err) {
+        console.warn('PostgreSQL queue notice:', err)
+        if (isMounted) {
+          setPending(fallbackHospitals.filter((h) => h.status === 'pending'))
+        }
+      } finally {
+        if (isMounted) setIsLoading(false)
+      }
     }
 
-    setPending((prev) => prev.filter((p) => p.id !== hospital.id))
+    fetchApplications()
+
+    return () => {
+      isMounted = false
+    }
+  }, [])
+
+  const handleApprove = async (hospital) => {
+    const appId = hospital.application_id || hospital.id
+    let orgId = `ORG-${Math.floor(100000 + Math.random() * 900000)}`
+    let adminEmail = hospital.officialEmail || `admin@${hospital.name.toLowerCase().replace(/[^a-z0-9]/g, '')}.org`
+    const initialSecret = 'Hospital@2026'
+
+    try {
+      const res = await api.admin.submitVerificationDecision(appId, 'approve', 'Approved by National Health Authority.', initialSecret)
+      if (res?.org_id) {
+        orgId = res.org_id
+      }
+      if (res?.admin_account?.email) {
+        adminEmail = res.admin_account.email
+      }
+    } catch (e) {
+      console.warn('Approval decision API error:', e)
+    }
+
+    setPending((prev) => prev.filter((p) => (p.application_id || p.id) !== appId))
     setHistory((prev) => [
       {
         ...hospital,
         status: 'approved',
         orgId,
         reviewedOn: 'Just now',
-        verifier: 'Super Admin (Administrator)',
+        verifier: 'Super Admin (National Authority)',
       },
       ...prev,
     ])
@@ -65,27 +124,28 @@ export default function Verification() {
       hospitalName: hospital.name,
       orgId,
       adminEmail,
-      initialSecret: 'hospital123',
+      initialSecret,
       fhirEndpoint: `https://api.medikiosk.in/v1/fhir/${orgId.toLowerCase()}`,
     })
     setSelectedHospital(null)
   }
 
   const handleReject = async (hospital) => {
+    const appId = hospital.application_id || hospital.id
     try {
-      await api.admin.submitVerificationDecision(hospital.id, 'reject', rejectionReason)
+      await api.admin.submitVerificationDecision(appId, 'reject', rejectionReason)
     } catch (e) {
-      console.log('Local fallback rejection update', e)
+      console.warn('Rejection decision API error:', e)
     }
 
-    setPending((prev) => prev.filter((p) => p.id !== hospital.id))
+    setPending((prev) => prev.filter((p) => (p.application_id || p.id) !== appId))
     setHistory((prev) => [
       {
         ...hospital,
         status: 'rejected',
         reason: rejectionReason,
         reviewedOn: 'Just now',
-        verifier: 'Super Admin (Administrator)',
+        verifier: 'Super Admin (National Authority)',
       },
       ...prev,
     ])

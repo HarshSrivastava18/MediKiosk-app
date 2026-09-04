@@ -34,3 +34,14 @@ server/uploads/*
 !server/uploads/.gitkeep
 server/data/*.json
 
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+

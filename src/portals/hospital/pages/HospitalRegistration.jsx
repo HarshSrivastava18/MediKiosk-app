@@ -88,6 +88,7 @@ export default function HospitalRegistration() {
 
   // Step 4: Tracking ID
   const [trackingId, setTrackingId] = useState('APP-2026-9841')
+  const [submissionError, setSubmissionError] = useState('')
 
   const toggleDept = (dept) => {
     if (selectedDepts.includes(dept)) {
@@ -98,39 +99,59 @@ export default function HospitalRegistration() {
   }
 
   const handleSubmitApplication = async () => {
+    setSubmissionError('')
     setIsSubmitting(true)
     try {
-      const res = await apiRequest('/auth/register-hospital', {
+      const res = await apiRequest('/hospitals/register', {
         method: 'POST',
         body: JSON.stringify({
-          hospitalName,
+          hospitalName: hospitalName.trim(),
           hospitalType,
-          regNumber,
+          regNumber: regNumber.trim(),
           state,
           city,
           pincode,
-          officialEmail,
-          phone,
-          medicalSuperintendent,
-          branchesCount,
-          totalBeds,
-          icuBeds,
-          departments: selectedDepts
+          officialEmail: officialEmail.trim(),
+          phone: phone.trim(),
+          medicalSuperintendent: medicalSuperintendent.trim(),
+          branchesCount: parseInt(branchesCount) || 1,
+          totalBeds: parseInt(totalBeds) || 0,
+          icuBeds: parseInt(icuBeds) || 0,
+          hasEmergency,
+          departments: selectedDepts,
+          documents: [
+            {
+              document_type: 'Clinical Establishment License',
+              file_name: typeof licenseFile === 'string' ? licenseFile : licenseFile.name,
+              file_path: `uploads/hospitals/${typeof licenseFile === 'string' ? licenseFile : licenseFile.name}`
+            },
+            {
+              document_type: 'NABH Quality Accreditation',
+              file_name: typeof nabhFile === 'string' ? nabhFile : nabhFile.name,
+              file_path: `uploads/hospitals/${typeof nabhFile === 'string' ? nabhFile : nabhFile.name}`
+            },
+            {
+              document_type: 'BioMedical Waste Clearance',
+              file_name: typeof pollutionFile === 'string' ? pollutionFile : pollutionFile.name,
+              file_path: `uploads/hospitals/${typeof pollutionFile === 'string' ? pollutionFile : pollutionFile.name}`
+            }
+          ]
         })
       })
 
-      if (res?.trackingId) {
-        setTrackingId(res.trackingId)
+      if (res?.tracking_id || res?.trackingId || res?.application_id) {
+        const assignedId = res.tracking_id || res.trackingId || res.application_id
+        setTrackingId(assignedId)
+        setStep(4)
       } else {
-        const randomAppId = `APP-2026-${Math.floor(1000 + Math.random() * 9000)}`
-        setTrackingId(randomAppId)
+        throw new Error(res?.detail || res?.error || 'Registration failed to return tracking ID from database.')
       }
-    } catch {
-      const randomAppId = `APP-2026-${Math.floor(1000 + Math.random() * 9000)}`
-      setTrackingId(randomAppId)
+    } catch (err) {
+      console.error('Registration failed:', err)
+      setSubmissionError(err.message || 'Hospital registration was rejected by the backend.')
+      // DO NOT advance to Step 4, DO NOT generate fake tracking ID!
     } finally {
       setIsSubmitting(false)
-      setStep(4)
     }
   }
 
@@ -385,22 +406,49 @@ export default function HospitalRegistration() {
                       <p className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                         {doc.label} {doc.required && <span className="text-red-500 text-xs">*</span>}
                       </p>
-                      <p className="text-[11px] text-emerald-700 font-medium">{doc.file}</p>
+                      <p className="text-[11px] text-emerald-700 font-medium">
+                        {typeof doc.file === 'string' ? doc.file : doc.file?.name || 'document.pdf'}
+                      </p>
                     </div>
                   </div>
-                  <Button variant="secondary" size="sm" className="text-xs">
-                    <Upload size={12} /> Replace File
-                  </Button>
+                  <label className="cursor-pointer">
+                    <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-semibold text-slate-700 hover:bg-slate-50 transition-colors shadow-sm">
+                      <Upload size={12} /> Replace File
+                    </span>
+                    <input
+                      type="file"
+                      accept=".pdf,.png,.jpg,.jpeg"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files?.[0]) {
+                          doc.setFile(e.target.files[0].name)
+                        }
+                      }}
+                    />
+                  </label>
                 </div>
               ))}
+
+              {submissionError && (
+                <div className="p-3.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs flex items-start gap-2.5 shadow-sm">
+                  <AlertCircle size={16} className="text-red-600 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="font-bold text-red-800">Registration Failed (FastAPI & PostgreSQL)</p>
+                    <p className="mt-0.5 leading-relaxed">{submissionError}</p>
+                    <p className="mt-1 text-[11px] text-red-600 font-semibold">
+                      Please correct the details above. If this hospital registration number or email is already registered, you cannot register again.
+                    </p>
+                  </div>
+                </div>
+              )}
 
               <div className="p-3 bg-emerald-50 rounded-xl border border-emerald-200 text-xs text-emerald-900">
                 <p className="font-semibold flex items-center gap-1.5 mb-1">
                   <CheckCircle size={14} className="text-emerald-600" />
-                  Pre-Validation Complete
+                  PostgreSQL Institutional Onboarding
                 </p>
                 <p className="text-[11px] text-emerald-800 leading-relaxed">
-                  Upon submission, your application will be cryptographically registered in the national registry and queued for Super Admin review.
+                  Upon submission, your application will be validated by FastAPI, stored in PostgreSQL across 4 tables, and queued as <strong>PENDING</strong> for Super Admin review.
                 </p>
               </div>
 
@@ -415,7 +463,7 @@ export default function HospitalRegistration() {
                   disabled={isSubmitting}
                   onClick={handleSubmitApplication}
                 >
-                  {isSubmitting ? 'Submitting Application...' : 'Submit Registration Application'}
+                  {isSubmitting ? 'Validating & Persisting...' : 'Submit Registration Application'}
                 </Button>
               </div>
             </CardBody>
@@ -431,17 +479,28 @@ export default function HospitalRegistration() {
                   <CheckCircle size={28} />
                 </div>
                 <div>
-                  <h2 className="text-xl font-bold text-white">Application Submitted Successfully!</h2>
-                  <p className="text-xs text-emerald-200 mt-0.5">Queued in the Super Admin National Verification Registry</p>
+                  <h2 className="text-xl font-bold text-white">Application Successfully Submitted!</h2>
+                  <p className="text-xs text-emerald-200 mt-0.5">Persisted in PostgreSQL & Queued for Super Admin Verification</p>
                 </div>
               </div>
             </div>
 
             <CardBody className="space-y-5">
+              {/* Registration != Login Separation Notice */}
+              <div className="p-4 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900 space-y-1.5">
+                <div className="flex items-center gap-2 font-bold text-amber-800">
+                  <Shield size={16} className="text-amber-600" />
+                  <span>Stage 1 Complete: Registration Submitted (Registration ≠ Login)</span>
+                </div>
+                <p className="text-slate-600 text-[11px] leading-relaxed">
+                  Under MediKiosk compliance rules, submitting an application does not immediately create an active login account. Your facility is currently in <strong>PENDING VERIFICATION</strong> state. A Super Admin must review the uploaded legal licenses before an <strong>Organization ID (ORG-XXX)</strong> and administrator credentials are generated.
+                </p>
+              </div>
+
               <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 space-y-3">
                 <div className="flex items-center justify-between border-b border-slate-200 pb-3">
                   <div>
-                    <p className="text-[10px] uppercase font-bold text-slate-400">Application Tracking Reference</p>
+                    <p className="text-[10px] uppercase font-bold text-slate-400">Application Tracking Reference (PostgreSQL)</p>
                     <p className="text-lg font-mono font-bold text-slate-900">{trackingId}</p>
                   </div>
                   <Badge variant="pending" dot>Pending Super Admin Review</Badge>
@@ -461,8 +520,8 @@ export default function HospitalRegistration() {
                     <p className="font-semibold text-slate-800">{totalBeds} Beds ({branchesCount} Branches)</p>
                   </div>
                   <div>
-                    <span className="text-slate-400">Applied On:</span>
-                    <p className="font-semibold text-slate-800">Today, 02 Sep 2026</p>
+                    <span className="text-slate-400">Official Email:</span>
+                    <p className="font-semibold text-slate-800 truncate">{officialEmail}</p>
                   </div>
                 </div>
               </div>
@@ -473,15 +532,15 @@ export default function HospitalRegistration() {
                 <div className="space-y-2 text-xs text-slate-600">
                   <div className="flex items-center gap-2 p-2 rounded bg-emerald-50 text-emerald-900 font-medium">
                     <CheckCircle size={14} className="text-emerald-600" />
-                    <span>Step 1: Automatic OCR & License Pre-Check — <strong>Passed</strong></span>
+                    <span>Step 1: Application & Documents Stored in PostgreSQL — <strong>Completed</strong></span>
                   </div>
                   <div className="flex items-center gap-2 p-2 rounded bg-amber-50 text-amber-900 font-medium">
                     <Clock size={14} className="text-amber-600" />
-                    <span>Step 2: Super Admin Authority Review & Verification — <strong>Under Review</strong></span>
+                    <span>Step 2: Super Admin Review & Due Diligence — <strong>Pending In Queue</strong></span>
                   </div>
                   <div className="flex items-center gap-2 p-2 rounded bg-slate-50 text-slate-500">
                     <Building2 size={14} />
-                    <span>Step 3: Issuance of Organization ID (ORG-XXX) & Admin Credentials</span>
+                    <span>Step 3: Super Admin Approves ➔ Generates ORG-ID & Hospital Admin Login Account</span>
                   </div>
                 </div>
               </div>
@@ -497,7 +556,7 @@ export default function HospitalRegistration() {
                     size="sm"
                     onClick={() => navigate('/admin/verification')}
                   >
-                    <Shield size={14} /> View in Super Admin Verification Queue
+                    <Shield size={14} /> Super Admin Verification Queue (Review Application)
                   </Button>
                 </div>
               </div>

@@ -98,15 +98,15 @@ export default function Login() {
     }
   }
 
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault()
     setError('')
     setIsLoading(true)
 
-    setTimeout(() => {
-      const result = login(selectedRole, identifier, password)
+    try {
+      const result = await login(selectedRole, identifier, password)
 
-      if (result.success) {
+      if (result && result.success) {
         setIsSuccess(true)
         setTimeout(() => {
           setIsLoading(false)
@@ -115,9 +115,12 @@ export default function Login() {
         }, 600)
       } else {
         setIsLoading(false)
-        setError(result.error || 'Authentication failed. Please check your credentials.')
+        setError(result?.error || 'Authentication failed. Please check your credentials.')
       }
-    }, 450)
+    } catch (err) {
+      setIsLoading(false)
+      setError(err?.message || 'Authentication error. Please try again.')
+    }
   }
 
   return (

@@ -135,8 +135,135 @@ class PatientRegisterResponse(BaseModel):
 class LoginResponse(BaseModel):
     success: bool = True
     token: str
-    patient_id: str
+    patient_id: Optional[str] = None
     patientId: Optional[str] = None
     role: str = "patient"
     user: dict
-    patient: PatientResponse
+    patient: Optional[PatientResponse] = None
+
+
+# ==========================================
+# HOSPITAL SCHEMAS
+# ==========================================
+
+class HospitalDocumentSchema(BaseModel):
+    id: Optional[int] = None
+    document_type: str = Field(..., description="Type of document (e.g. license, nabh, pollution)")
+    file_name: str
+    file_path: str
+    uploaded_at: Optional[datetime] = None
+    verification_status: Optional[str] = "pending"
+    verified_at: Optional[datetime] = None
+
+    class Config:
+        from_attributes = True
+
+
+class HospitalInfrastructureSchema(BaseModel):
+    branches_count: int = 1
+    total_beds: int = 0
+    icu_beds: int = 0
+    has_emergency: bool = True
+
+    class Config:
+        from_attributes = True
+
+
+class HospitalDepartmentSchema(BaseModel):
+    id: Optional[int] = None
+    department_name: str
+    is_active: bool = True
+
+    class Config:
+        from_attributes = True
+
+
+class HospitalRegisterRequest(BaseModel):
+    hospital_name: Optional[str] = None
+    hospitalName: Optional[str] = None
+    hospital_type: Optional[str] = "Private"
+    hospitalType: Optional[str] = "Private"
+    registration_number: Optional[str] = None
+    regNumber: Optional[str] = None
+    state: Optional[str] = None
+    city: Optional[str] = None
+    pincode: Optional[str] = None
+    official_email: Optional[EmailStr] = None
+    officialEmail: Optional[EmailStr] = None
+    phone: str = Field(..., min_length=7, max_length=64)
+    medical_superintendent: Optional[str] = None
+    medicalSuperintendent: Optional[str] = None
+    
+    # Infrastructure
+    branches_count: Optional[int] = None
+    branchesCount: Optional[int] = None
+    total_beds: Optional[int] = None
+    totalBeds: Optional[int] = None
+    icu_beds: Optional[int] = None
+    icuBeds: Optional[int] = None
+    has_emergency: Optional[bool] = None
+    hasEmergency: Optional[bool] = None
+
+    # Departments & Docs
+    departments: List[str] = Field(default_factory=list)
+    documents: Optional[List[dict]] = Field(default_factory=list)
+
+    @field_validator("phone")
+    @classmethod
+    def clean_phone(cls, v: str) -> str:
+        cleaned = v.strip()
+        if not cleaned:
+            raise ValueError("Phone number cannot be empty")
+        return cleaned
+
+
+class HospitalApplicationResponse(BaseModel):
+    id: int
+    application_id: str
+    hospital_name: str
+    hospital_type: Optional[str]
+    registration_number: str
+    state: Optional[str]
+    city: Optional[str]
+    pincode: Optional[str]
+    official_email: str
+    phone: Optional[str]
+    medical_superintendent: Optional[str]
+    status: str
+    org_id: Optional[str] = None
+    submitted_at: Optional[datetime] = None
+    verified_at: Optional[datetime] = None
+    rejection_reason: Optional[str] = None
+    infrastructure: Optional[HospitalInfrastructureSchema] = None
+    departments: List[str] = []
+    documents: List[HospitalDocumentSchema] = []
+
+    class Config:
+        from_attributes = True
+
+
+class HospitalRegisterResponse(BaseModel):
+    success: bool = True
+    message: str = "Hospital application successfully submitted for Super Admin verification"
+    application_id: str
+    tracking_id: str
+    trackingId: str
+    status: str = "pending"
+    application: HospitalApplicationResponse
+
+
+class VerificationDecisionRequest(BaseModel):
+    action: str = Field(..., description="'approve' or 'reject'")
+    rejection_reason: Optional[str] = None
+    comments: Optional[str] = None
+    initial_password: Optional[str] = "Hospital@2026"
+
+
+class VerificationDecisionResponse(BaseModel):
+    success: bool = True
+    application_id: str
+    status: str
+    org_id: Optional[str] = None
+    admin_account: Optional[dict] = None
+    message: str
+
