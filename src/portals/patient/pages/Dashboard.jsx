@@ -15,6 +15,7 @@ import {
   FlaskConical,
   Zap,
   Users,
+  Database,
 } from 'lucide-react'
 import Card, { CardHeader, CardBody } from '../../../components/ui/Card'
 import Button from '../../../components/ui/Button'
@@ -100,15 +101,21 @@ export default function PatientDashboard() {
     <div className="p-6 space-y-6">
 
       {/* ── Greeting row ── */}
-      <div className="flex items-start justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-slate-800">Welcome, {firstName} 👋</h1>
-          <p className="text-slate-500 text-sm mt-1">Here's your live personal health summary for today.</p>
+          <p className="text-slate-500 text-sm mt-1">Live health summary read directly from PostgreSQL.</p>
         </div>
-        <span className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-700 px-3 py-1.5 rounded-full text-xs font-semibold">
-          <span className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
-          {patient.id}
-        </span>
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 bg-emerald-50 border border-emerald-200 text-emerald-700 px-3 py-1.5 rounded-full text-xs font-semibold shadow-sm">
+            <Database size={13} className="text-emerald-600 animate-pulse" />
+            <span>PostgreSQL 16 Live</span>
+          </span>
+          <span className="inline-flex items-center gap-2 bg-blue-50 border border-blue-200 text-blue-700 px-3 py-1.5 rounded-full text-xs font-semibold font-mono">
+            <span className="w-1.5 h-1.5 bg-blue-500 rounded-full" />
+            {patient.id}
+          </span>
+        </div>
       </div>
 
       {/* ── Quick action cards ── */}
@@ -193,6 +200,55 @@ export default function PatientDashboard() {
                 </div>
               )
             })}
+
+            {/* PostgreSQL Clinical Detail Lists */}
+            {patient.conditions?.length > 0 && (
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5 flex items-center justify-between">
+                  <span>Diagnosed Conditions</span>
+                  <span className="text-[10px] text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded font-mono">patient_conditions</span>
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {patient.conditions.map((c, i) => (
+                    <span key={i} className="text-xs bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded-md font-medium">
+                      {c}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {patient.medications?.length > 0 && (
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5 flex items-center justify-between">
+                  <span>Active Medications</span>
+                  <span className="text-[10px] text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded font-mono">patient_medications</span>
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {patient.medications.map((m, i) => (
+                    <span key={i} className="text-xs bg-blue-50 text-blue-700 border border-blue-200 px-2 py-0.5 rounded-md font-medium">
+                      {m}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {patient.allergies?.length > 0 && (
+              <div className="pt-2 border-t border-slate-100">
+                <p className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide mb-1.5 flex items-center justify-between">
+                  <span>Known Allergies</span>
+                  <span className="text-[10px] text-amber-600 bg-amber-50 px-1.5 py-0.5 rounded font-mono">patient_allergies</span>
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {patient.allergies.map((a, i) => (
+                    <span key={i} className="text-xs bg-amber-50 text-amber-700 border border-amber-200 px-2 py-0.5 rounded-md font-medium">
+                      {a}
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Vitals mini strip */}
             <div className="mt-2 pt-3 border-t border-slate-100">

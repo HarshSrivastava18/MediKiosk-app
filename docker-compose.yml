@@ -1,6 +1,47 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: medikiosk-postgres
+    ports:
+      - '5433:5432'
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: medikiosk
+    volumes:
+      - medikiosk_pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U postgres']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  fastapi-backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: medikiosk-fastapi
+    ports:
+      - '8001:8001'
+    environment:
+      - PORT=8001
+      - HOST=0.0.0.0
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/medikiosk
+      - JWT_SECRET=medikiosk_production_secret_key_2026
+      - CORS_ORIGINS=http://localhost:5173,http://localhost:3000
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8001/api/health']
+      interval: 20s
+      timeout: 5s
+      retries: 3
+
   api-server:
     build:
       context: ./server
@@ -13,8 +54,6 @@ services:
       - JWT_SECRET=medikiosk_production_secret_key_2026
       - CORS_ORIGIN=http://localhost:5173,http://localhost:3000
     restart: unless-stopped
-    healthcheck:
-      test: ['CMD', 'wget', '--spider', '-q', 'http://localhost:5000/api/health']
-      interval: 30s
-      timeout: 10s
-      retries: 3
+
+volumes:
+  medikiosk_pgdata:

@@ -50,7 +50,7 @@ export function useCurrentPatient() {
     }
   })
 
-  // Synchronize with backend API if online
+  // Synchronize with PostgreSQL via FastAPI backend
   useEffect(() => {
     let isMounted = true
 
@@ -58,19 +58,33 @@ export function useCurrentPatient() {
       try {
         const res = await api.patient.getMe()
         if (res?.patient && isMounted) {
+          const p = res.patient
           setPatient((prev) => ({
             ...prev,
-            ...res.patient
+            ...p,
+            id: p.patient_id || prev.id,
+            patient_id: p.patient_id || prev.patient_id,
+            name: p.full_name || p.name || prev.name,
+            full_name: p.full_name || prev.full_name,
+            dob: p.date_of_birth || prev.dob,
+            bloodGroup: p.blood_group || prev.bloodGroup,
+            phone: p.phone || prev.phone,
+            email: p.email || prev.email,
+            address: p.address || prev.address,
+            conditions: Array.isArray(p.conditions) ? p.conditions : prev.conditions,
+            allergies: Array.isArray(p.allergies) ? p.allergies : prev.allergies,
+            medications: Array.isArray(p.medications) ? p.medications : prev.medications,
+            emergencyContact: p.emergency_contacts?.[0] || prev.emergencyContact,
+            isPostgresLive: true,
+            dataSource: 'PostgreSQL'
           }))
         }
-      } catch {
-        // Silent fallback to local user data
+      } catch (err) {
+        console.log('PostgreSQL sync notice:', err.message)
       }
     }
 
-    if (user?.role === 'patient') {
-      fetchLivePatientData()
-    }
+    fetchLivePatientData()
 
     return () => {
       isMounted = false

@@ -1,4 +1,4 @@
-const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api'
+const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:8001/api'
 
 export async function apiRequest(endpoint, options = {}) {
   const token = localStorage.getItem('medikiosk_auth_token') || ''
@@ -17,7 +17,8 @@ export async function apiRequest(endpoint, options = {}) {
   const data = await response.json().catch(() => ({}))
 
   if (!response.ok) {
-    throw new Error(data.error || `Request failed with status ${response.status}`)
+    const errorMsg = data.detail || data.error || (typeof data === 'string' ? data : `Request failed with status ${response.status}`)
+    throw new Error(errorMsg)
   }
 
   return data
@@ -39,6 +40,8 @@ export const api = {
   },
   patient: {
     getMe: () => apiRequest('/patient/me'),
+    getById: (patientId) => apiRequest(`/patients/${patientId}`),
+    getAll: () => apiRequest('/patients'),
     getTimeline: (patientId) =>
       apiRequest(`/patient/timeline${patientId ? `?patientId=${patientId}` : ''}`),
     getPrescriptions: (patientId) =>
