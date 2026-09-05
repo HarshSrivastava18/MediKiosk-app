@@ -38,6 +38,7 @@ import {
   isSpeechSynthesisSupported
 } from '../../../services/speechSynthesisService'
 import { ClinicalInterviewSession } from '../../../services/clinicalChatEngine'
+import { api } from '../../../lib/api'
 
 const STEPS = ['Prepare', 'AI Interview', 'Documents', 'Summary']
 
@@ -653,19 +654,30 @@ function StepDocuments({ onNext, onBack, uploaded, setUploaded }) {
   )
 }
 
-// ── Step 4: Final AI Case Summary & Doctor Submission ─────────────────────────
+// ── Step 4: Final AI Case Summary & Hospital Submission ───────────────────────
 function StepSummary({ onBack, caseSummary, uploaded, onSendToDoctor }) {
+  const { patient } = useCurrentPatient()
   const [submitted, setSubmitted] = useState(false)
-  const [tokenNumber, setTokenNumber] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitError, setSubmitError] = useState('')
+  const [summaryResult, setSummaryResult] = useState(null)
+  const [selectedHospital, setSelectedHospital] = useState('ORG-001')
+
+  const hospitalsList = [
+    { id: 'ORG-001', name: 'City Hospital — Lucknow' },
+    { id: 'ORG-002', name: 'Apollo Clinic — Lucknow' },
+    { id: 'ORG-006', name: 'Jeevan Hospital — Jaipur' },
+    { id: 'ORG-391206', name: 'Apex Institute of Medical Sciences' }
+  ]
 
   const summary = caseSummary || {
-    patientName: 'Rahul Kumar',
+    patientName: patient?.name || 'Rahul Kumar',
     chiefComplaint: 'Chest pain and breathlessness',
     duration: '2 days',
     painScore: 6,
     severityLabel: 'Moderate',
     associatedSymptoms: ['Mild palpitations', 'Breathlessness on exertion'],
-    relevantHistory: ['Hypertension (Amlodipine 5mg)', 'Mild Asthma'],
+    relevantHistory: patient?.conditions?.length ? patient.conditions : ['Hypertension (Amlodipine 5mg)', 'Mild Asthma'],
     redFlags: {
       active: true,
       severity: 'HIGH',
@@ -680,11 +692,48 @@ function StepSummary({ onBack, caseSummary, uploaded, onSendToDoctor }) {
     }
   }
 
-  const handleSend = () => {
-    const generatedToken = `OPD-${Math.floor(100 + Math.random() * 900)}`
-    setTokenNumber(generatedToken)
-    setSubmitted(true)
-    if (onSendToDoctor) onSendToDoctor(summary, generatedToken)
+  const handleSendToHospital = async () => {
+    setIsSubmitting(true)
+    setSubmitError('')
+
+    const chosenHosp = hospitalsList.find(h => h.id === selectedHospital) || hospitalsList[0]
+
+    const payload = {
+      patient_id: patient?.id,
+      hospital_id: chosenHosp.id,
+      hospital_name: chosenHosp.name,
+      patient_name: patient?.name || summary.patientName,
+      patient_age: patient?.age ? `${patient.age} yrs` : undefined,
+      patient_gender: patient?.gender,
+      contact_phone: patient?.phone,
+      contact_email: patient?.email,
+      chief_complaint: summary.chiefComplaint,
+      symptoms: summary.associatedSymptoms || [],
+      duration: summary.duration,
+      severity_label: summary.severityLabel,
+      pain_score: summary.painScore,
+      medical_history: patient?.conditions?.length ? patient.conditions : (summary.relevantHistory || []),
+      current_medications: patient?.medications || [],
+      allergies: patient?.allergies || [],
+      previous_diagnoses: patient?.conditions || [],
+      uploaded_documents: uploaded || [],
+      ai_summary: summary.soap ? `${summary.soap.assessment} Plan: ${summary.soap.plan?.join(' ')}` : 'Automated intake summary generated.',
+      soap: summary.soap,
+      red_flags: summary.redFlags
+    }
+
+    try {
+      const result = await api.patient.submitSummary(payload)
+      setSummaryResult(result)
+      setSubmitted(true)
+      localStorage.setItem('medikiosk_active_case_summary', JSON.stringify(result))
+      if (onSendToDoctor) onSendToDoctor(result)
+    } catch (err) {
+      console.error('Failed to submit medical summary:', err)
+      setSubmitError(err.message || 'Failed to submit medical summary to hospital. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -695,28 +744,47 @@ function StepSummary({ onBack, caseSummary, uploaded, onSendToDoctor }) {
         </div>
         <h2 className="text-xl font-bold text-slate-800">AI Clinical Case Summary</h2>
         <p className="text-slate-500 text-sm mt-1">
-          Synthesized from your interview and ready for attending physician review
+          Synthesized from your intake interview and prepared for Hospital Review &amp; Doctor Allocation
         </p>
       </div>
 
-      {submitted ? (
+      {submitError && (
+        <div className="p-3.5 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 font-medium">
+          {submitError}
+        </div>
+      )}
+
+      {submitted && summaryResult ? (
         <Card className="border-emerald-200 bg-emerald-50/50">
           <CardBody className="text-center py-8 space-y-4">
             <div className="w-16 h-16 rounded-full bg-emerald-500 text-white flex items-center justify-center mx-auto shadow-md">
               <CheckCircle size={32} />
             </div>
             <div>
-              <h3 className="text-xl font-bold text-slate-900">Case Transmitted to Doctor!</h3>
-              <p className="text-sm text-slate-600 mt-1">
-                Your structured clinical case summary has been transferred to the Doctor Portal.
+              <Badge variant="warning" className="mb-2 uppercase tracking-wide font-bold">
+                {summaryResult.status}
+              </Badge>
+              <h3 className="text-xl font-bold text-slate-900">Summary Submitted to Hospital!</h3>
+              <p className="text-sm text-slate-600 mt-1 max-w-md mx-auto">
+                Your structured clinical case summary is now pending review at <strong className="text-slate-800">{summaryResult.hospital_name}</strong>.
               </p>
             </div>
-            <div className="inline-block bg-white border border-emerald-300 rounded-xl px-6 py-3 shadow-xs">
-              <p className="text-xs uppercase font-bold text-slate-400 tracking-wider">Your OPD Queue Token</p>
-              <p className="text-3xl font-extrabold text-emerald-700 mt-0.5">{tokenNumber}</p>
+
+            <div className="grid grid-cols-2 gap-3 max-w-sm mx-auto text-left">
+              <div className="bg-white border border-emerald-200 rounded-xl p-3 shadow-xs">
+                <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Summary Tracking ID</p>
+                <p className="text-sm font-extrabold text-emerald-800 mt-0.5 font-mono">{summaryResult.summary_id}</p>
+              </div>
+              <div className="bg-white border border-emerald-200 rounded-xl p-3 shadow-xs">
+                <p className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Triage Priority</p>
+                <p className={`text-sm font-extrabold mt-0.5 ${summaryResult.priority === 'Urgent' ? 'text-red-600' : 'text-emerald-700'}`}>
+                  {summaryResult.priority}
+                </p>
+              </div>
             </div>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              Please take a seat in the waiting area. The doctor has already received your symptoms, vitals risk assessment, and clinical history.
+
+            <p className="text-xs text-slate-500 max-w-md mx-auto bg-white/80 p-3 rounded-lg border border-emerald-100">
+              The hospital administration will review your vital symptoms and allocate an appropriate specialist doctor. You can track this in real-time from your Patient Dashboard.
             </p>
           </CardBody>
         </Card>
@@ -726,10 +794,10 @@ function StepSummary({ onBack, caseSummary, uploaded, onSendToDoctor }) {
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-bold text-slate-800">
-                  Clinical Intake — {summary.patientName}
+                  Clinical Intake — {patient?.name || summary.patientName}
                 </h3>
                 <p className="text-[11px] text-slate-400">
-                  Engine: Deterministic Triage Engine &amp; Web Speech STT (Zero Quota)
+                  Patient ID: {patient?.id || 'MK-8472-9812-3345'} · PostgreSQL Persistent
                 </p>
               </div>
               <Badge variant={summary.redFlags?.active ? 'danger' : 'success'}>
@@ -738,6 +806,27 @@ function StepSummary({ onBack, caseSummary, uploaded, onSendToDoctor }) {
             </div>
           </CardHeader>
           <CardBody className="space-y-4">
+            {/* Target Hospital Selector */}
+            <div className="p-3.5 rounded-xl border border-blue-200 bg-blue-50/40 space-y-1.5">
+              <label className="text-xs font-bold uppercase tracking-wider text-blue-900 block">
+                Destination Hospital for Review
+              </label>
+              <select
+                value={selectedHospital}
+                onChange={(e) => setSelectedHospital(e.target.value)}
+                className="w-full text-sm bg-white border border-blue-300 rounded-lg px-3 py-2 text-slate-800 font-medium focus:ring-2 focus:ring-blue-500 outline-none"
+              >
+                {hospitalsList.map((h) => (
+                  <option key={h.id} value={h.id}>
+                    {h.name} ({h.id})
+                  </option>
+                ))}
+              </select>
+              <p className="text-[11px] text-slate-500">
+                Hospital staff will review your case summary and assign the best available doctor.
+              </p>
+            </div>
+
             {/* Red Flag Warning */}
             {summary.redFlags?.active && (
               <div className="rounded-xl border border-red-200 bg-red-50 p-4">
@@ -774,7 +863,7 @@ function StepSummary({ onBack, caseSummary, uploaded, onSendToDoctor }) {
                 Associated Symptoms &amp; Probing
               </p>
               <div className="flex flex-wrap gap-1.5">
-                {summary.associatedSymptoms.map((s, idx) => (
+                {(summary.associatedSymptoms || []).map((s, idx) => (
                   <span key={idx} className="bg-white border border-violet-200 text-violet-800 text-xs px-2.5 py-1 rounded-md font-medium">
                     {s}
                   </span>
@@ -788,7 +877,7 @@ function StepSummary({ onBack, caseSummary, uploaded, onSendToDoctor }) {
                 Relevant Medical History &amp; Medications
               </p>
               <ul className="text-xs text-slate-700 space-y-1">
-                {summary.relevantHistory.map((h, i) => (
+                {(patient?.conditions?.length ? patient.conditions : (summary.relevantHistory || [])).map((h, i) => (
                   <li key={i} className="flex items-center gap-2">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
                     {h}
@@ -827,14 +916,18 @@ function StepSummary({ onBack, caseSummary, uploaded, onSendToDoctor }) {
 
       {/* Buttons */}
       <div className="flex gap-3 pt-2">
-        <Button variant="secondary" onClick={onBack}>
+        <Button variant="secondary" onClick={onBack} disabled={isSubmitting}>
           <ChevronLeft size={16} /> Back
         </Button>
         {!submitted ? (
           <>
-            <Button onClick={handleSend} className="flex-1 gap-2 font-bold shadow-md">
+            <Button
+              onClick={handleSendToHospital}
+              disabled={isSubmitting}
+              className="flex-1 gap-2 font-bold shadow-md"
+            >
               <Send size={16} />
-              Transmit Case to Doctor
+              {isSubmitting ? 'Transmitting to Hospital...' : 'Submit Summary to Hospital'}
             </Button>
             <Button
               variant="outline"

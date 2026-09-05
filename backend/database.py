@@ -1,4 +1,4 @@
-from sqlalchemy import create_engine
+from sqlalchemy import create_engine, text
 from sqlalchemy.orm import declarative_base, sessionmaker
 from backend.config import DATABASE_URL
 
@@ -23,3 +23,9 @@ def get_db():
 def init_db():
     import backend.models  # Ensure models are loaded before creating tables
     Base.metadata.create_all(bind=engine)
+    try:
+        with engine.begin() as conn:
+            conn.execute(text("ALTER TABLE staff_users ADD COLUMN IF NOT EXISTS hospital_id VARCHAR(64);"))
+    except Exception as e:
+        print(f"Schema migration warning: {e}")
+

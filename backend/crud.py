@@ -15,9 +15,11 @@ from backend.models import (
     HospitalDepartment,
     HospitalDocument,
     HospitalUser,
-    StaffUser
+    StaffUser,
+    MedicalSummary,
+    DoctorAssignment
 )
-from backend.schemas import PatientRegisterRequest, EmergencyContactSchema
+from backend.schemas import PatientRegisterRequest, EmergencyContactSchema, MedicalSummaryCreateRequest
 from backend.security import hash_password, verify_password
 
 def generate_patient_id() -> str:
@@ -465,4 +467,379 @@ def authenticate_staff_user(db: Session, identifier: str, password: str, role: O
         return None
 
     return user
+
+
+# ==========================================
+# MEDICAL SUMMARY & DOCTOR ALLOCATION CRUD
+# ==========================================
+
+def generate_summary_id() -> str:
+    """Generate standardized Medical Summary ID: SUM-2026-XXXXXX"""
+    num = random.randint(100000, 999999)
+    return f"SUM-2026-{num}"
+
+def generate_assignment_id() -> str:
+    """Generate standardized Doctor Assignment ID: ASN-2026-XXXXXX"""
+    num = random.randint(100000, 999999)
+    return f"ASN-2026-{num}"
+
+def format_assignment_dict(assignment: DoctorAssignment) -> dict:
+    summary_patient_name = assignment.summary.patient_name if assignment.summary else None
+    summary_chief_complaint = assignment.summary.chief_complaint if assignment.summary else None
+    summary_priority = assignment.summary.priority if assignment.summary else "Normal"
+    summary_red_flags = assignment.summary.red_flags if assignment.summary else None
+
+    return {
+        "id": assignment.id,
+        "assignment_id": assignment.assignment_id,
+        "patient_id": assignment.patient_id,
+        "summary_id": assignment.summary_id,
+        "hospital_id": assignment.hospital_id,
+        "hospital_name": assignment.hospital_name,
+        "doctor_id": assignment.doctor_id,
+        "doctor_name": assignment.doctor_name,
+        "doctor_specialty": assignment.doctor_specialty,
+        "doctor_department": assignment.doctor_department,
+        "assigned_by": assignment.assigned_by,
+        "status": assignment.status,
+        "notes": assignment.notes,
+        "assignment_timestamp": assignment.assignment_timestamp,
+        "patient_name": summary_patient_name,
+        "chief_complaint": summary_chief_complaint,
+        "priority": summary_priority,
+        "red_flags": summary_red_flags
+    }
+
+
+def format_summary_dict(summary: MedicalSummary) -> dict:
+    assignment_dict = None
+    if summary.assignment:
+        assignment_dict = format_assignment_dict(summary.assignment)
+
+    return {
+        "id": summary.id,
+        "summary_id": summary.summary_id,
+        "patient_id": summary.patient_id,
+        "hospital_id": summary.hospital_id,
+        "hospital_name": summary.hospital_name,
+        "patient_name": summary.patient_name,
+        "patient_age": summary.patient_age,
+        "patient_gender": summary.patient_gender,
+        "contact_phone": summary.contact_phone,
+        "contact_email": summary.contact_email,
+        "chief_complaint": summary.chief_complaint,
+        "symptoms": summary.symptoms or [],
+        "duration": summary.duration,
+        "severity_label": summary.severity_label,
+        "pain_score": summary.pain_score,
+        "medical_history": summary.medical_history or [],
+        "current_medications": summary.current_medications or [],
+        "allergies": summary.allergies or [],
+        "previous_diagnoses": summary.previous_diagnoses or [],
+        "uploaded_documents": summary.uploaded_documents or [],
+        "ai_summary": summary.ai_summary,
+        "soap": summary.soap,
+        "red_flags": summary.red_flags,
+        "priority": summary.priority or "Normal",
+        "status": summary.status,
+        "submitted_at": summary.submitted_at,
+        "assignment": assignment_dict
+    }
+
+def create_medical_summary(db: Session, patient: Patient, data: MedicalSummaryCreateRequest) -> MedicalSummary:
+    sid = generate_summary_id()
+    while db.query(MedicalSummary).filter(MedicalSummary.summary_id == sid).first():
+        sid = generate_summary_id()
+
+    # Determine priority: if red flags active, priority is "Urgent"
+    is_urgent = False
+    if data.red_flags and isinstance(data.red_flags, dict) and data.red_flags.get("active"):
+        is_urgent = True
+    priority = data.priority or ("Urgent" if is_urgent else "Normal")
+
+    # If hospital_name not provided, look up from hospital_id
+    h_name = data.hospital_name
+    h_id = data.hospital_id or "ORG-001"
+    if not h_name and h_id:
+        app = db.query(HospitalApplication).filter(HospitalApplication.org_id == h_id).first()
+        if app:
+            h_name = app.hospital_name
+
+    # Calculate approximate age from date_of_birth if patient_age not provided
+    age = data.patient_age
+    if not age and patient.date_of_birth:
+        try:
+            birth_year = int(patient.date_of_birth.split("-")[0])
+            age = f"{2026 - birth_year} yrs"
+        except Exception:
+            age = None
+
+    summary = MedicalSummary(
+        summary_id=sid,
+        patient_id=patient.patient_id,
+        hospital_id=h_id,
+        hospital_name=h_name or "City Hospital — Lucknow",
+        patient_name=data.patient_name or patient.full_name,
+        patient_age=age,
+        patient_gender=data.patient_gender or patient.gender,
+        contact_phone=data.contact_phone or patient.phone,
+        contact_email=data.contact_email or patient.email,
+        chief_complaint=data.chief_complaint,
+        symptoms=data.symptoms or [],
+        duration=data.duration,
+        severity_label=data.severity_label or "Moderate",
+        pain_score=data.pain_score if data.pain_score is not None else 5,
+        medical_history=data.medical_history or [c.condition for c in (patient.conditions or [])],
+        current_medications=data.current_medications or [m.medication for m in (patient.medications or [])],
+        allergies=data.allergies or [a.allergy for a in (patient.allergies or [])],
+        previous_diagnoses=data.previous_diagnoses or [],
+        uploaded_documents=data.uploaded_documents or [],
+        ai_summary=data.ai_summary,
+        soap=data.soap,
+        red_flags=data.red_flags,
+        priority=priority,
+        status="Pending Hospital Review",
+        submitted_at=datetime.utcnow()
+    )
+
+    db.add(summary)
+    db.commit()
+    db.refresh(summary)
+    return summary
+
+def get_medical_summary_by_id(db: Session, summary_id: str) -> Optional[MedicalSummary]:
+    clean_id = summary_id.strip()
+    return db.query(MedicalSummary).filter(
+        or_(
+            MedicalSummary.summary_id == clean_id,
+            MedicalSummary.id == (int(clean_id) if clean_id.isdigit() else -1)
+        )
+    ).first()
+
+def list_patient_summaries(db: Session, patient_id: str) -> List[MedicalSummary]:
+    return db.query(MedicalSummary).filter(
+        MedicalSummary.patient_id == patient_id
+    ).order_by(MedicalSummary.id.desc()).all()
+
+def list_hospital_summaries(
+    db: Session,
+    hospital_id: str,
+    status: Optional[str] = None
+) -> List[MedicalSummary]:
+    clean_hid = hospital_id.strip()
+    query = db.query(MedicalSummary).filter(
+        or_(
+            MedicalSummary.hospital_id == clean_hid,
+            MedicalSummary.hospital_id.is_(None)
+        )
+    )
+    if status and status.lower() != "all":
+        if status.lower() == "pending":
+            query = query.filter(MedicalSummary.status == "Pending Hospital Review")
+        elif status.lower() == "assigned":
+            query = query.filter(MedicalSummary.status == "Doctor Assigned")
+        else:
+            query = query.filter(MedicalSummary.status.ilike(status))
+
+    return query.order_by(
+        # Order Urgent first, then by id descending
+        MedicalSummary.priority.desc(),
+        MedicalSummary.id.desc()
+    ).all()
+
+def list_hospital_doctors(db: Session, hospital_id: str) -> List[dict]:
+    """
+    Fetch doctors belonging to that hospital with workload calculation.
+    """
+    clean_hid = hospital_id.strip()
+    # Find hospital name if exists
+    app = db.query(HospitalApplication).filter(HospitalApplication.org_id == clean_hid).first()
+    h_name = app.hospital_name if app else ""
+
+    doctors_query = db.query(StaffUser).filter(StaffUser.role == "doctor")
+    if clean_hid:
+        filters = [StaffUser.hospital_id == clean_hid]
+        if h_name:
+            # Also allow doctors with matching hospital name
+            filters.append(StaffUser.hospital_name.ilike(f"%{h_name.split('—')[0].strip()}%"))
+        # If default hospital ORG-001, also include doctors without explicit hospital_id
+        if clean_hid == "ORG-001":
+            filters.append(StaffUser.hospital_id.is_(None))
+        doctors_query = doctors_query.filter(or_(*filters))
+
+    doctors = doctors_query.all()
+    results = []
+    for doc in doctors:
+        # Calculate active workload from doctor_assignments
+        active_count = db.query(DoctorAssignment).filter(
+            DoctorAssignment.doctor_id == doc.staff_id,
+            DoctorAssignment.status.in_(["Assigned", "In Consultation"])
+        ).count()
+
+        status_text = "Available" if active_count < 8 else ("Busy" if active_count < 15 else "At Capacity")
+
+        results.append({
+            "staff_id": doc.staff_id,
+            "name": doc.name,
+            "email": doc.email,
+            "phone": doc.phone,
+            "title": doc.title or "Attending Physician",
+            "department": doc.department or "General Medicine",
+            "specialty": doc.specialty or "General Medicine",
+            "hospital_name": doc.hospital_name or h_name or "City Hospital",
+            "hospital_id": doc.hospital_id or clean_hid,
+            "experience": doc.experience or 5,
+            "rating": doc.rating or 4.8,
+            "is_active": doc.is_active,
+            "status": status_text,
+            "active_workload": active_count
+        })
+
+    return results
+
+def assign_doctor_to_summary(
+    db: Session,
+    summary_id: str,
+    doctor_id: str,
+    hospital_id: str,
+    assigned_by: str,
+    notes: Optional[str] = None
+) -> tuple[DoctorAssignment, MedicalSummary]:
+    """
+    Hospital allocates doctor to patient medical summary:
+    1. Validates summary and doctor
+    2. Enforces hospital scope
+    3. Prevents duplicate active assignment
+    4. Creates doctor_assignments record
+    5. Updates medical_summaries status -> 'Doctor Assigned'
+    """
+    summary = get_medical_summary_by_id(db, summary_id)
+    if not summary:
+        raise ValueError(f"Medical Summary '{summary_id}' not found.")
+
+    clean_doc_id = doctor_id.strip()
+    doctor = db.query(StaffUser).filter(
+        StaffUser.staff_id == clean_doc_id,
+        StaffUser.role == "doctor"
+    ).first()
+    if not doctor:
+        raise ValueError(f"Doctor with ID '{clean_doc_id}' not found.")
+
+    # Validate hospital ownership: doctor must belong to this hospital
+    if doctor.hospital_id and hospital_id and doctor.hospital_id != hospital_id:
+        raise ValueError(f"Doctor '{doctor.name}' does not belong to hospital '{hospital_id}'.")
+
+    # Check if assignment already exists
+    existing_assignment = db.query(DoctorAssignment).filter(
+        DoctorAssignment.summary_id == summary.summary_id
+    ).first()
+
+    if existing_assignment:
+        # Re-assign or update
+        existing_assignment.doctor_id = doctor.staff_id
+        existing_assignment.doctor_name = doctor.name
+        existing_assignment.doctor_specialty = doctor.specialty
+        existing_assignment.doctor_department = doctor.department
+        existing_assignment.assigned_by = assigned_by
+        existing_assignment.status = "Assigned"
+        existing_assignment.notes = notes
+        existing_assignment.assignment_timestamp = datetime.utcnow()
+        summary.status = "Doctor Assigned"
+        db.commit()
+        db.refresh(existing_assignment)
+        db.refresh(summary)
+        return existing_assignment, summary
+
+    # Create new assignment
+    aid = generate_assignment_id()
+    while db.query(DoctorAssignment).filter(DoctorAssignment.assignment_id == aid).first():
+        aid = generate_assignment_id()
+
+    assignment = DoctorAssignment(
+        assignment_id=aid,
+        patient_id=summary.patient_id,
+        summary_id=summary.summary_id,
+        hospital_id=hospital_id or summary.hospital_id or "ORG-001",
+        hospital_name=summary.hospital_name or doctor.hospital_name,
+        doctor_id=doctor.staff_id,
+        doctor_name=doctor.name,
+        doctor_specialty=doctor.specialty,
+        doctor_department=doctor.department,
+        assigned_by=assigned_by,
+        status="Assigned",
+        notes=notes,
+        assignment_timestamp=datetime.utcnow()
+    )
+
+    summary.status = "Doctor Assigned"
+    db.add(assignment)
+    db.commit()
+    db.refresh(assignment)
+    db.refresh(summary)
+    return assignment, summary
+
+def list_doctor_assignments(db: Session, doctor_id: str) -> List[DoctorAssignment]:
+    clean_id = doctor_id.strip()
+    return db.query(DoctorAssignment).filter(
+        DoctorAssignment.doctor_id == clean_id
+    ).order_by(DoctorAssignment.id.desc()).all()
+
+def get_doctor_assignment_by_id(db: Session, assignment_id: str) -> Optional[DoctorAssignment]:
+    clean_id = assignment_id.strip()
+    return db.query(DoctorAssignment).filter(
+        or_(
+            DoctorAssignment.assignment_id == clean_id,
+            DoctorAssignment.id == (int(clean_id) if clean_id.isdigit() else -1)
+        )
+    ).first()
+
+def get_patient_latest_summary_status(db: Session, patient_id: str) -> Optional[dict]:
+    summary = db.query(MedicalSummary).filter(
+        MedicalSummary.patient_id == patient_id
+    ).order_by(MedicalSummary.id.desc()).first()
+
+    if not summary:
+        return {
+            "summary_id": None,
+            "patient_id": patient_id,
+            "status": "Draft",
+            "submitted_at": None,
+            "hospital_name": None,
+            "doctor_name": None,
+            "doctor_specialty": None,
+            "doctor_department": None,
+            "appointment_info": None,
+            "assignment_timestamp": None,
+            "priority": None,
+            "chief_complaint": None
+        }
+
+    doc_name = None
+    doc_spec = None
+    doc_dept = None
+    asgn_time = None
+    appt_info = None
+
+    if summary.assignment:
+        doc_name = summary.assignment.doctor_name
+        doc_spec = summary.assignment.doctor_specialty
+        doc_dept = summary.assignment.doctor_department
+        asgn_time = summary.assignment.assignment_timestamp
+        appt_info = f"Assigned to {summary.assignment.doctor_department} OPD · Priority: {summary.priority}"
+
+    return {
+        "summary_id": summary.summary_id,
+        "patient_id": summary.patient_id,
+        "status": summary.status,
+        "submitted_at": summary.submitted_at,
+        "hospital_name": summary.hospital_name,
+        "doctor_name": doc_name,
+        "doctor_specialty": doc_spec,
+        "doctor_department": doc_dept,
+        "appointment_info": appt_info,
+        "assignment_timestamp": asgn_time,
+        "priority": summary.priority,
+        "chief_complaint": summary.chief_complaint
+    }
+
 

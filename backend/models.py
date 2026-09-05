@@ -82,6 +82,11 @@ class Patient(Base):
         back_populates="patient",
         cascade="all, delete-orphan"
     )
+    medical_summaries = orm_relationship(
+        "MedicalSummary",
+        back_populates="patient",
+        cascade="all, delete-orphan"
+    )
 
 
 
@@ -289,6 +294,7 @@ class StaffUser(Base):
     department = Column(String(100), nullable=True)
     specialty = Column(String(100), nullable=True)
     hospital_name = Column(String(255), nullable=True)
+    hospital_id = Column(String(64), nullable=True, index=True) # e.g. ORG-001
     experience = Column(Integer, default=5)
     rating = Column(Float, default=4.8)
     patients_count = Column(Integer, default=30)
@@ -539,6 +545,91 @@ class AuditLog(Base):
     ip_address = Column(String(64), nullable=True)
     status = Column(String(32), default="SUCCESS") # SUCCESS, TRIGGERED, DENIED
     created_at = Column(DateTime(timezone=True), server_default=func.now(), default=datetime.utcnow)
+
+
+class MedicalSummary(Base):
+    __tablename__ = "medical_summaries"
+
+    id = Column(Integer, primary_key=True, index=True)
+    summary_id = Column(String(64), unique=True, index=True, nullable=False) # SUM-2026-XXXXXX
+    patient_id = Column(
+        String(64),
+        ForeignKey("patients.patient_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    hospital_id = Column(String(64), nullable=True, index=True) # e.g. ORG-001
+    hospital_name = Column(String(255), nullable=True)
+    patient_name = Column(String(255), nullable=False)
+    patient_age = Column(String(32), nullable=True)
+    patient_gender = Column(String(32), nullable=True)
+    contact_phone = Column(String(64), nullable=True)
+    contact_email = Column(String(255), nullable=True)
+
+    chief_complaint = Column(Text, nullable=False)
+    symptoms = Column(JSON, nullable=True) # list of associated/reported symptoms
+    duration = Column(String(64), nullable=True)
+    severity_label = Column(String(64), nullable=True)
+    pain_score = Column(Integer, nullable=True)
+
+    medical_history = Column(JSON, nullable=True) # list of past conditions
+    current_medications = Column(JSON, nullable=True) # list of active medications
+    allergies = Column(JSON, nullable=True) # list of known allergies
+    previous_diagnoses = Column(JSON, nullable=True) # list
+    uploaded_documents = Column(JSON, nullable=True) # list of document dicts/names
+    ai_summary = Column(Text, nullable=True) # AI generated text or SOAP notes
+    soap = Column(JSON, nullable=True) # structured SOAP dict
+    red_flags = Column(JSON, nullable=True) # {active: bool, severity: str, title: str, description: str}
+
+    priority = Column(String(32), default="Normal", nullable=False, index=True) # Normal, Urgent
+    status = Column(String(64), default="Pending Hospital Review", nullable=False, index=True) # Draft, Submitted, Pending Hospital Review, Doctor Assigned, Consultation, Completed
+    submitted_at = Column(DateTime(timezone=True), server_default=func.now(), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), default=datetime.utcnow)
+
+    patient = orm_relationship("Patient", back_populates="medical_summaries")
+    assignment = orm_relationship("DoctorAssignment", back_populates="summary", uselist=False, cascade="all, delete-orphan")
+
+
+class DoctorAssignment(Base):
+    __tablename__ = "doctor_assignments"
+
+    id = Column(Integer, primary_key=True, index=True)
+    assignment_id = Column(String(64), unique=True, index=True, nullable=False) # ASN-2026-XXXXXX
+    patient_id = Column(
+        String(64),
+        ForeignKey("patients.patient_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    summary_id = Column(
+        String(64),
+        ForeignKey("medical_summaries.summary_id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True
+    )
+    hospital_id = Column(String(64), nullable=False, index=True)
+    hospital_name = Column(String(255), nullable=True)
+    doctor_id = Column(
+        String(64),
+        ForeignKey("staff_users.staff_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True
+    )
+    doctor_name = Column(String(255), nullable=False)
+    doctor_specialty = Column(String(100), nullable=True)
+    doctor_department = Column(String(100), nullable=True)
+    assigned_by = Column(String(64), nullable=True) # hospital user or admin ID
+    status = Column(String(64), default="Assigned", nullable=False, index=True) # Assigned, In Consultation, Completed, Cancelled
+    notes = Column(Text, nullable=True)
+    assignment_timestamp = Column(DateTime(timezone=True), server_default=func.now(), default=datetime.utcnow)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), default=datetime.utcnow)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now(), default=datetime.utcnow)
+
+    summary = orm_relationship("MedicalSummary", back_populates="assignment")
+    patient = orm_relationship("Patient")
+    doctor = orm_relationship("StaffUser")
 
 
 

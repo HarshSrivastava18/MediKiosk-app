@@ -52,11 +52,31 @@ export const api = {
       apiRequest('/patient/documents', {
         method: 'POST',
         body: JSON.stringify(docData)
-      })
+      }),
+    submitSummary: (summaryData) =>
+      apiRequest('/patient/summaries', {
+        method: 'POST',
+        body: JSON.stringify(summaryData)
+      }),
+    getSummaries: (patientId) =>
+      apiRequest(`/patient/summaries${patientId ? `?patient_id=${patientId}` : ''}`),
+    getSummaryStatus: (patientId) =>
+      apiRequest(`/patient/summaries/status${patientId ? `?patient_id=${patientId}` : ''}`),
+    getSummaryById: (id) =>
+      apiRequest(`/patient/summaries/${id}`)
   },
   doctor: {
     getDashboard: () => apiRequest('/doctor/dashboard'),
     getPatientCase: (id) => apiRequest(`/doctor/patient/${id}`),
+    getAssignments: (doctorId) =>
+      apiRequest(`/doctor/assignments${doctorId ? `?doctor_id=${doctorId}` : ''}`),
+    getAssignmentById: (id) =>
+      apiRequest(`/doctor/assignments/${id}`),
+    updateAssignmentStatus: (id, status) =>
+      apiRequest(`/doctor/assignments/${id}/status`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status })
+      }),
     createPrescription: (rxData) =>
       apiRequest('/doctor/prescriptions', {
         method: 'POST',
@@ -69,6 +89,17 @@ export const api = {
       })
   },
   hospital: {
+    getSummaries: (status) =>
+      apiRequest(`/hospital/summaries${status ? `?status=${status}` : ''}`),
+    getSummaryById: (id) =>
+      apiRequest(`/hospital/summaries/${id}`),
+    getDoctors: () =>
+      apiRequest('/hospital/doctors'),
+    assignDoctor: (summaryId, doctorId, notes = '') =>
+      apiRequest(`/hospital/summaries/${summaryId}/assign-doctor`, {
+        method: 'POST',
+        body: JSON.stringify({ doctor_id: doctorId, notes })
+      }),
     register: (hospitalData) =>
       apiRequest('/hospitals/register', {
         method: 'POST',

@@ -267,3 +267,131 @@ class VerificationDecisionResponse(BaseModel):
     admin_account: Optional[dict] = None
     message: str
 
+
+# ==========================================
+# MEDICAL SUMMARY & DOCTOR ASSIGNMENT SCHEMAS
+# ==========================================
+
+class MedicalSummaryCreateRequest(BaseModel):
+    patient_id: Optional[str] = None
+    hospital_id: Optional[str] = "ORG-001"
+    hospital_name: Optional[str] = None
+    patient_name: Optional[str] = None
+    patient_age: Optional[str] = None
+    patient_gender: Optional[str] = None
+    contact_phone: Optional[str] = None
+    contact_email: Optional[str] = None
+    chief_complaint: str = Field(..., min_length=2, description="Chief medical complaint")
+    symptoms: List[str] = Field(default_factory=list)
+    duration: Optional[str] = None
+    severity_label: Optional[str] = "Moderate"
+    pain_score: Optional[int] = 5
+    medical_history: List[str] = Field(default_factory=list)
+    current_medications: List[str] = Field(default_factory=list)
+    allergies: List[str] = Field(default_factory=list)
+    previous_diagnoses: List[str] = Field(default_factory=list)
+    uploaded_documents: List[dict] = Field(default_factory=list)
+    ai_summary: Optional[str] = None
+    soap: Optional[dict] = None
+    red_flags: Optional[dict] = None
+    priority: Optional[str] = None # Normal, Urgent
+    status: Optional[str] = "Pending Hospital Review"
+
+
+class DoctorAssignmentResponse(BaseModel):
+    id: int
+    assignment_id: str
+    patient_id: str
+    summary_id: str
+    hospital_id: str
+    hospital_name: Optional[str] = None
+    doctor_id: str
+    doctor_name: str
+    doctor_specialty: Optional[str] = None
+    doctor_department: Optional[str] = None
+    assigned_by: Optional[str] = None
+    status: str = "Assigned"
+    notes: Optional[str] = None
+    assignment_timestamp: Optional[datetime] = None
+    patient_name: Optional[str] = None
+    chief_complaint: Optional[str] = None
+    priority: Optional[str] = "Normal"
+    red_flags: Optional[dict] = None
+
+    class Config:
+        from_attributes = True
+
+
+class MedicalSummaryResponse(BaseModel):
+    id: int
+    summary_id: str
+    patient_id: str
+    hospital_id: Optional[str] = None
+    hospital_name: Optional[str] = None
+    patient_name: str
+    patient_age: Optional[str] = None
+    patient_gender: Optional[str] = None
+    contact_phone: Optional[str] = None
+    contact_email: Optional[str] = None
+    chief_complaint: str
+    symptoms: List[str] = []
+    duration: Optional[str] = None
+    severity_label: Optional[str] = None
+    pain_score: Optional[int] = None
+    medical_history: List[str] = []
+    current_medications: List[str] = []
+    allergies: List[str] = []
+    previous_diagnoses: List[str] = []
+    uploaded_documents: List[dict] = []
+    ai_summary: Optional[str] = None
+    soap: Optional[dict] = None
+    red_flags: Optional[dict] = None
+    priority: str = "Normal"
+    status: str = "Pending Hospital Review"
+    submitted_at: Optional[datetime] = None
+    assignment: Optional[DoctorAssignmentResponse] = None
+
+    class Config:
+        from_attributes = True
+
+
+class AssignDoctorRequest(BaseModel):
+    doctor_id: str = Field(..., description="Staff ID of the doctor (e.g. DOC-001)")
+    notes: Optional[str] = None
+
+
+class HospitalDoctorResponse(BaseModel):
+    staff_id: str
+    name: str
+    email: str
+    phone: Optional[str] = None
+    title: Optional[str] = None
+    department: Optional[str] = None
+    specialty: Optional[str] = None
+    hospital_name: Optional[str] = None
+    hospital_id: Optional[str] = None
+    experience: Optional[int] = 5
+    rating: Optional[float] = 4.8
+    is_active: bool = True
+    status: str = "Available"
+    active_workload: int = 0
+
+    class Config:
+        from_attributes = True
+
+
+class PatientSummaryStatusResponse(BaseModel):
+    summary_id: Optional[str] = None
+    patient_id: Optional[str] = None
+    status: str
+    submitted_at: Optional[datetime] = None
+    hospital_name: Optional[str] = None
+    doctor_name: Optional[str] = None
+    doctor_specialty: Optional[str] = None
+    doctor_department: Optional[str] = None
+    appointment_info: Optional[str] = None
+    assignment_timestamp: Optional[datetime] = None
+    priority: Optional[str] = None
+    chief_complaint: Optional[str] = None
+
+

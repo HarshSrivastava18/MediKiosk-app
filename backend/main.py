@@ -17,7 +17,9 @@ from backend.models import (
     PatientMedication,
     HospitalApplication,
     HospitalUser,
-    StaffUser
+    StaffUser,
+    MedicalSummary,
+    DoctorAssignment
 )
 from backend.schemas import (
     PatientRegisterRequest,
@@ -31,7 +33,13 @@ from backend.schemas import (
     HospitalApplicationResponse,
     HospitalRegisterResponse,
     VerificationDecisionRequest,
-    VerificationDecisionResponse
+    VerificationDecisionResponse,
+    MedicalSummaryCreateRequest,
+    MedicalSummaryResponse,
+    DoctorAssignmentResponse,
+    AssignDoctorRequest,
+    HospitalDoctorResponse,
+    PatientSummaryStatusResponse
 )
 from backend.crud import (
     create_patient_transaction,
@@ -49,7 +57,18 @@ from backend.crud import (
     reject_hospital_application,
     authenticate_hospital_user,
     authenticate_staff_user,
-    format_hospital_application_dict
+    format_hospital_application_dict,
+    create_medical_summary,
+    get_medical_summary_by_id,
+    list_patient_summaries,
+    list_hospital_summaries,
+    list_hospital_doctors,
+    assign_doctor_to_summary,
+    list_doctor_assignments,
+    get_doctor_assignment_by_id,
+    get_patient_latest_summary_status,
+    format_summary_dict,
+    format_assignment_dict
 )
 from backend.security import create_access_token, decode_access_token
 
@@ -585,3 +604,438 @@ def get_all_patients(skip: int = 0, limit: int = 100, db: Session = Depends(get_
     """Returns directory of all patients stored in PostgreSQL."""
     patients = list_patients(db, skip=skip, limit=limit)
     return [PatientResponse(**format_patient_dict(p)) for p in patients]
+
+
+# ==============================================================================
+# PATIENT SUMMARY → HOSPITAL REVIEW → DOCTOR ALLOCATION WORKFLOW ENDPOINTS
+# ==============================================================================
+
+# -----------------
+# 1. Patient Summary Endpoints
+# -----------------
+
+@app.post(
+    "/api/patient/summaries",
+    response_model=MedicalSummaryResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Patient Creates & Submits Medical Summary"
+)
+def submit_medical_summary(
+    payload: MedicalSummaryCreateRequest,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Step 1 & 2 of workflow:
+    When a patient completes the checkup/registration and generates a Medical Summary,
+    it is persisted in PostgreSQL `medical_summaries`.
+    Status is initialized to 'Pending Hospital Review'.
+    """
+    target_pid = payload.patient_id
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "").strip()
+        decoded = decode_access_token(token)
+        if decoded and decoded.get("role") == "patient":
+            target_pid = decoded.get("sub")
+
+    patient = None
+    if target_pid:
+        patient = get_patient_by_identifier(db, target_pid)
+    if not patient:
+        patient = db.query(Patient).order_by(Patient.id.desc()).first()
+
+    if not patient:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Active patient profile not found in database to associate medical summary."
+        )
+
+    summary = create_medical_summary(db, patient, payload)
+    return MedicalSummaryResponse(**format_summary_dict(summary))
+
+
+@app.get(
+    "/api/patient/summaries",
+    response_model=List[MedicalSummaryResponse],
+    summary="List Submitted Medical Summaries for Logged-in Patient"
+)
+def get_patient_summaries(
+    patient_id: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Retrieves all medical summaries for the patient."""
+    target_pid = patient_id
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "").strip()
+        decoded = decode_access_token(token)
+        if decoded:
+            target_pid = decoded.get("sub")
+
+    if not target_pid:
+        latest = db.query(Patient).order_by(Patient.id.desc()).first()
+        if latest:
+            target_pid = latest.patient_id
+
+    if not target_pid:
+        return []
+
+    summaries = list_patient_summaries(db, target_pid)
+    return [MedicalSummaryResponse(**format_summary_dict(s)) for s in summaries]
+
+
+@app.get(
+    "/api/patient/summaries/status",
+    response_model=PatientSummaryStatusResponse,
+    summary="Get Active Summary & Doctor Allocation Status for Patient Dashboard"
+)
+def get_patient_summary_status(
+    patient_id: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Provides real-time allocation status for the Patient Dashboard:
+    Possible states: Draft -> Submitted -> Pending Hospital Review -> Doctor Assigned -> Consultation
+    When assigned, shows Doctor Name, Specialization, Department, Hospital, Timestamp.
+    """
+    target_pid = patient_id
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "").strip()
+        decoded = decode_access_token(token)
+        if decoded:
+            target_pid = decoded.get("sub")
+
+    if not target_pid:
+        latest = db.query(Patient).order_by(Patient.id.desc()).first()
+        if latest:
+            target_pid = latest.patient_id
+
+    if not target_pid:
+        return PatientSummaryStatusResponse(status="Draft")
+
+    status_data = get_patient_latest_summary_status(db, target_pid)
+    return PatientSummaryStatusResponse(**status_data)
+
+
+@app.get(
+    "/api/patient/summaries/{summary_id}",
+    response_model=MedicalSummaryResponse,
+    summary="Get Specific Medical Summary by ID"
+)
+def get_medical_summary(
+    summary_id: str,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Retrieve full details of a medical summary with role authorization."""
+    summary = get_medical_summary_by_id(db, summary_id)
+    if not summary:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Medical summary '{summary_id}' not found."
+        )
+
+    # RBAC security check
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "").strip()
+        decoded = decode_access_token(token)
+        if decoded:
+            role = decoded.get("role")
+            sub = decoded.get("sub")
+            if role == "patient" and summary.patient_id != sub:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Patients can only view their own medical summaries."
+                )
+            elif role == "hospital" and summary.hospital_id and summary.hospital_id != sub:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Hospital staff cannot access summaries belonging to unrelated hospitals."
+                )
+            elif role == "doctor":
+                if not summary.assignment or summary.assignment.doctor_id != sub:
+                    raise HTTPException(
+                        status_code=status.HTTP_403_FORBIDDEN,
+                        detail="Doctors can only view medical summaries specifically assigned to them."
+                    )
+
+    return MedicalSummaryResponse(**format_summary_dict(summary))
+
+
+# -----------------
+# 2. Hospital Review & Doctor Allocation Endpoints
+# -----------------
+
+@app.get(
+    "/api/hospital/summaries",
+    response_model=List[MedicalSummaryResponse],
+    summary="Hospital Dashboard: List Patient Summaries for Review"
+)
+def get_hospital_summaries(
+    status: Optional[str] = Query(None, description="Filter by status: pending, assigned, all"),
+    hospital_id: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Step 2 of workflow:
+    Hospital receives and lists submitted summaries with Priority, Submitted Time, Status.
+    """
+    hid = hospital_id
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "").strip()
+        decoded = decode_access_token(token)
+        if decoded:
+            if decoded.get("role") not in ["hospital", "admin"]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only authorized Hospital Administrators/Staff can access hospital summaries."
+                )
+            hid = decoded.get("sub")
+
+    if not hid:
+        hid = "ORG-001"
+
+    summaries = list_hospital_summaries(db, hid, status=status)
+    return [MedicalSummaryResponse(**format_summary_dict(s)) for s in summaries]
+
+
+@app.get(
+    "/api/hospital/summaries/{summary_id}",
+    response_model=MedicalSummaryResponse,
+    summary="Hospital Dashboard: Review Full Patient Summary"
+)
+def hospital_get_summary_detail(
+    summary_id: str,
+    hospital_id: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Step 3 of workflow:
+    Hospital opens and reviews patient's complete clinical intake before doctor allocation.
+    """
+    summary = get_medical_summary_by_id(db, summary_id)
+    if not summary:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Medical summary '{summary_id}' not found."
+        )
+
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "").strip()
+        decoded = decode_access_token(token)
+        if decoded:
+            if decoded.get("role") not in ["hospital", "admin"]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Hospital access required."
+                )
+            if decoded.get("role") == "hospital" and summary.hospital_id and summary.hospital_id != decoded.get("sub"):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: Summary belongs to another hospital."
+                )
+
+    return MedicalSummaryResponse(**format_summary_dict(summary))
+
+
+@app.get(
+    "/api/hospital/doctors",
+    response_model=List[HospitalDoctorResponse],
+    summary="Hospital Dashboard: List Available Doctors with Workload"
+)
+def get_hospital_doctors(
+    hospital_id: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Step 4: Fetch doctors belonging to that hospital with workload, specialty, and availability.
+    """
+    hid = hospital_id
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "").strip()
+        decoded = decode_access_token(token)
+        if decoded:
+            if decoded.get("role") not in ["hospital", "admin"]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Hospital access required."
+                )
+            hid = decoded.get("sub")
+
+    if not hid:
+        hid = "ORG-001"
+
+    doctors = list_hospital_doctors(db, hid)
+    return [HospitalDoctorResponse(**d) for d in doctors]
+
+
+@app.post(
+    "/api/hospital/summaries/{summary_id}/assign-doctor",
+    response_model=DoctorAssignmentResponse,
+    summary="Hospital Allocates Doctor to Medical Summary"
+)
+def assign_doctor(
+    summary_id: str,
+    payload: AssignDoctorRequest,
+    hospital_id: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Step 4 & 5:
+    Hospital staff/admin assigns an available doctor to the patient summary.
+    Creates an assignment record in PostgreSQL and updates summary status to 'Doctor Assigned'.
+    """
+    assigned_by = "Hospital Admin"
+    hid = hospital_id
+
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "").strip()
+        decoded = decode_access_token(token)
+        if decoded:
+            if decoded.get("role") not in ["hospital", "admin"]:
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Only Hospital staff or administrators can assign doctors."
+                )
+            hid = decoded.get("sub")
+            assigned_by = decoded.get("email") or decoded.get("sub")
+
+    if not hid:
+        hid = "ORG-001"
+
+    try:
+        assignment, summary = assign_doctor_to_summary(
+            db=db,
+            summary_id=summary_id,
+            doctor_id=payload.doctor_id,
+            hospital_id=hid,
+            assigned_by=assigned_by,
+            notes=payload.notes
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+    return DoctorAssignmentResponse(**format_assignment_dict(assignment))
+
+
+# -----------------
+# 3. Doctor Dashboard Endpoints
+# -----------------
+
+@app.get(
+    "/api/doctor/assignments",
+    response_model=List[DoctorAssignmentResponse],
+    summary="Doctor Dashboard: List Patients Assigned to this Doctor"
+)
+def get_doctor_assignments(
+    doctor_id: Optional[str] = None,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Step 6: Doctor retrieves patients assigned strictly to them.
+    Doctors cannot see patients assigned to other doctors.
+    """
+    target_doc_id = doctor_id
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "").strip()
+        decoded = decode_access_token(token)
+        if decoded:
+            if decoded.get("role") != "doctor":
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Doctor access required."
+                )
+            target_doc_id = decoded.get("sub")
+
+    if not target_doc_id:
+        target_doc_id = "DOC-001"
+
+    assignments = list_doctor_assignments(db, target_doc_id)
+    return [DoctorAssignmentResponse(**format_assignment_dict(a)) for a in assignments]
+
+
+@app.get(
+    "/api/doctor/assignments/{assignment_id}",
+    summary="Doctor Dashboard: Open Assigned Patient Summary"
+)
+def get_doctor_assignment_details(
+    assignment_id: str,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """
+    Step 6: Doctor opens the full patient medical summary for consultation.
+    """
+    assignment = get_doctor_assignment_by_id(db, assignment_id)
+    if not assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Assignment '{assignment_id}' not found."
+        )
+
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "").strip()
+        decoded = decode_access_token(token)
+        if decoded and decoded.get("role") == "doctor":
+            if assignment.doctor_id != decoded.get("sub"):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Access denied: You can only view patients assigned directly to you."
+                )
+
+    summary_dict = format_summary_dict(assignment.summary) if assignment.summary else None
+    return {
+        "assignment": format_assignment_dict(assignment),
+        "summary": summary_dict
+    }
+
+
+@app.patch(
+    "/api/doctor/assignments/{assignment_id}/status",
+    summary="Doctor Dashboard: Update Consultation Status"
+)
+def update_doctor_assignment_status(
+    assignment_id: str,
+    payload: dict,
+    authorization: Optional[str] = Header(None),
+    db: Session = Depends(get_db)
+):
+    """Updates consultation status (e.g. In Consultation, Completed)."""
+    assignment = get_doctor_assignment_by_id(db, assignment_id)
+    if not assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assignment not found."
+        )
+
+    if authorization and authorization.startswith("Bearer "):
+        token = authorization.replace("Bearer ", "").strip()
+        decoded = decode_access_token(token)
+        if decoded and decoded.get("role") == "doctor":
+            if assignment.doctor_id != decoded.get("sub"):
+                raise HTTPException(
+                    status_code=status.HTTP_403_FORBIDDEN,
+                    detail="Cannot update another doctor's assignment."
+                )
+
+    new_status = payload.get("status", "In Consultation")
+    assignment.status = new_status
+    if assignment.summary:
+        if new_status in ["In Consultation", "Consultation"]:
+            assignment.summary.status = "Consultation"
+        elif new_status == "Completed":
+            assignment.summary.status = "Completed"
+
+    db.commit()
+    db.refresh(assignment)
+    return format_assignment_dict(assignment)
+

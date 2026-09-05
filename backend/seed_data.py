@@ -761,6 +761,7 @@ def seed_all():
                 "department": "Cardiology",
                 "specialty": "Cardiology",
                 "hospital_name": "City Hospital — Lucknow",
+                "hospital_id": "ORG-001",
                 "experience": 15,
                 "rating": 4.8,
                 "patients_count": 42
@@ -776,6 +777,7 @@ def seed_all():
                 "department": "Neurology",
                 "specialty": "Neurology",
                 "hospital_name": "City Hospital — Lucknow",
+                "hospital_id": "ORG-001",
                 "experience": 12,
                 "rating": 4.7,
                 "patients_count": 36
@@ -791,6 +793,7 @@ def seed_all():
                 "department": "Emergency",
                 "specialty": "General Medicine",
                 "hospital_name": "City Hospital — Lucknow",
+                "hospital_id": "ORG-001",
                 "experience": 8,
                 "rating": 4.6,
                 "patients_count": 58
@@ -806,6 +809,7 @@ def seed_all():
                 "department": "Orthopedics",
                 "specialty": "Orthopedics",
                 "hospital_name": "City Hospital — Delhi Branch",
+                "hospital_id": "ORG-001",
                 "experience": 20,
                 "rating": 4.9,
                 "patients_count": 29
@@ -821,6 +825,7 @@ def seed_all():
                 "department": "National Oversight",
                 "specialty": "Tier-1 Root",
                 "hospital_name": "Ministry of Health / MediKiosk Authority",
+                "hospital_id": None,
                 "experience": 18,
                 "rating": 5.0,
                 "patients_count": 0
@@ -836,6 +841,7 @@ def seed_all():
                 "department": "Regulatory Assurance",
                 "specialty": "Hospital Accreditation",
                 "hospital_name": "Quality Council of Health",
+                "hospital_id": None,
                 "experience": 16,
                 "rating": 4.9,
                 "patients_count": 0
@@ -861,6 +867,7 @@ def seed_all():
                     department=su["department"],
                     specialty=su["specialty"],
                     hospital_name=su["hospital_name"],
+                    hospital_id=su.get("hospital_id"),
                     experience=su["experience"],
                     rating=su["rating"],
                     patients_count=su["patients_count"],
@@ -870,6 +877,7 @@ def seed_all():
                 db.add(user)
             else:
                 existing_su.password_hash = hash_password(su["password"])
+                existing_su.hospital_id = su.get("hospital_id")
                 existing_su.is_active = True
 
         db.commit()

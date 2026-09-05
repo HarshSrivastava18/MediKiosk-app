@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, useLocation } from 'react-router-dom'
 import {
   ArrowLeft,
   CheckCircle,
@@ -28,6 +28,9 @@ import {
   Zap,
   Shield,
   StickyNote,
+  Building2,
+  CheckCircle2,
+  RefreshCw,
 } from 'lucide-react'
 import Card, { CardHeader, CardBody, CardFooter } from '../../../components/ui/Card'
 import Button from '../../../components/ui/Button'
@@ -37,6 +40,7 @@ import Tabs from '../../../components/ui/Tabs'
 import Timeline from '../../../components/ui/Timeline'
 import RedFlagBanner from '../../../components/ui/RedFlagBanner'
 import { getPatient } from '../../../data/patients'
+import { api } from '../../../lib/api'
 
 // ─── Vitals Card ────────────────────────────────────────────────────────────
 function VitalCard({ label, value, icon: Icon, color, unit, normal }) {
@@ -76,19 +80,33 @@ function ActionRow({ icon: Icon, label, color = 'text-brand-600 bg-brand-50', on
 }
 
 // ─── AI Case Summary Tab ─────────────────────────────────────────────────────
-function AICaseSummaryTab({ patient }) {
+function AICaseSummaryTab({ patient, summary }) {
   const [liveCase, setLiveCase] = useState(null)
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('medikiosk_active_case_summary')
-      if (saved) {
-        setLiveCase(JSON.parse(saved))
+    if (summary) {
+      setLiveCase({
+        chiefComplaint: summary.chief_complaint,
+        historyOfPresentIllness: summary.soap?.subjective || summary.ai_summary || summary.duration,
+        associatedSymptoms: summary.symptoms || [],
+        relevantHistory: summary.medical_history || [],
+        painScore: summary.pain_score ?? 6,
+        severityLabel: summary.severity_label || 'Moderate',
+        duration: summary.duration || '2 Days',
+        redFlags: summary.red_flags,
+        soap: summary.soap
+      })
+    } else {
+      try {
+        const saved = localStorage.getItem('medikiosk_active_case_summary')
+        if (saved) {
+          setLiveCase(JSON.parse(saved))
+        }
+      } catch (e) {
+        // ignore
       }
-    } catch (e) {
-      // ignore
     }
-  }, [])
+  }, [summary])
 
   return (
     <div className="grid grid-cols-1 xl:grid-cols-3 gap-5">
@@ -115,7 +133,9 @@ function AICaseSummaryTab({ patient }) {
                 </div>
                 <p className="font-semibold text-slate-800">Clinical Overview</p>
               </div>
-              {liveCase ? (
+              {summary ? (
+                <Badge variant="primary" dot>PostgreSQL Persisted Summary ({summary.summary_id})</Badge>
+              ) : liveCase ? (
                 <Badge variant="success" dot>Live Kiosk Intake Received</Badge>
               ) : (
                 <Badge variant="primary" dot>AI Processed</Badge>
@@ -128,7 +148,7 @@ function AICaseSummaryTab({ patient }) {
             <div>
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Chief Complaint</p>
               <p className="text-sm text-slate-800 font-medium bg-slate-50 rounded-lg px-3 py-2">
-                {liveCase?.chiefComplaint || patient?.complaint || 'Chest pain for 2 days'}
+                {liveCase?.chiefComplaint || summary?.chief_complaint || patient?.complaint || 'Chest pain for 2 days'}
               </p>
             </div>
 
@@ -136,7 +156,7 @@ function AICaseSummaryTab({ patient }) {
             <div>
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">History of Present Illness</p>
               <p className="text-sm text-slate-700 leading-relaxed bg-slate-50 rounded-lg px-3 py-2">
-                {liveCase?.historyOfPresentIllness || liveCase?.soap?.subjective || 'Intermittent chest discomfort since yesterday, increases on exertion with associated breathlessness. Patient reports discomfort radiating to the left arm during episodes. No fever, no cough. Episodes last 5–10 minutes and are relieved by rest.'}
+                {liveCase?.historyOfPresentIllness || summary?.soap?.subjective || summary?.ai_summary || 'Intermittent chest discomfort since yesterday, increases on exertion with associated breathlessness. Patient reports discomfort radiating to the left arm during episodes. Relieved by rest.'}
               </p>
             </div>
 
@@ -144,7 +164,12 @@ function AICaseSummaryTab({ patient }) {
             <div>
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Associated Symptoms</p>
               <div className="flex flex-wrap gap-2">
-                {(liveCase?.associatedSymptoms || ['Breathlessness', 'Fatigue', 'Diaphoresis', 'Mild Nausea']).map(s => (
+                {((liveCase?.associatedSymptoms && liveCase.associatedSymptoms.length > 0)
+                  ? liveCase.associatedSymptoms
+                  : (summary?.symptoms && summary.symptoms.length > 0)
+                  ? summary.symptoms
+                  : ['Breathlessness', 'Fatigue', 'Diaphoresis', 'Mild Nausea']
+                ).map(s => (
                   <Badge key={s} variant="warning">{s}</Badge>
                 ))}
               </div>
@@ -154,7 +179,12 @@ function AICaseSummaryTab({ patient }) {
             <div>
               <p className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-1.5">Relevant History</p>
               <div className="space-y-1.5">
-                {(liveCase?.relevantHistory || ['Hypertension (diagnosed 2 years ago, on Amlodipine 5mg)', 'Mild Asthma (controlled, on Salbutamol PRN)', 'No prior cardiac events reported']).map((h, i) => (
+                {((liveCase?.relevantHistory && liveCase.relevantHistory.length > 0)
+                  ? liveCase.relevantHistory
+                  : (summary?.medical_history && summary.medical_history.length > 0)
+                  ? summary.medical_history
+                  : ['Hypertension (diagnosed 2 years ago, on Amlodipine 5mg)', 'Mild Asthma (controlled, on Salbutamol PRN)', 'No prior cardiac events reported']
+                ).map((h, i) => (
                   <div key={i} className="flex items-start gap-2 text-sm text-slate-700">
                     <div className="w-1.5 h-1.5 rounded-full bg-brand-500 flex-shrink-0 mt-1.5" />
                     {h}
@@ -164,6 +194,7 @@ function AICaseSummaryTab({ patient }) {
             </div>
           </CardBody>
         </Card>
+
 
         {/* Key Findings */}
         <Card>
@@ -626,13 +657,121 @@ function ActionsSidebar() {
 export default function PatientCase() {
   const { id } = useParams()
   const navigate = useNavigate()
-  const patient = getPatient(id)
+  const location = useLocation()
+
+  const fallbackPatient = getPatient(id)
+  const [patientData, setPatientData] = useState(fallbackPatient)
+  const [summaryData, setSummaryData] = useState(null)
+  const [assignmentData, setAssignmentData] = useState(null)
+  const [loading, setLoading] = useState(true)
+  const [updatingStatus, setUpdatingStatus] = useState(false)
+  const [consultStatus, setConsultStatus] = useState('Assigned')
+
+  const assignmentId = location.state?.assignmentId
+  const summaryId = location.state?.summaryId
+
+  useEffect(() => {
+    let isMounted = true
+
+    async function loadCase() {
+      setLoading(true)
+      try {
+        // 1. If assignmentId is provided, fetch assignment details
+        if (assignmentId && !assignmentId.startsWith('ASN-MOCK-')) {
+          const res = await api.doctor.getAssignmentById(assignmentId)
+          if (res?.assignment && isMounted) {
+            setAssignmentData(res.assignment)
+            setConsultStatus(res.assignment.status || 'Assigned')
+          }
+          if (res?.summary && isMounted) {
+            setSummaryData(res.summary)
+          }
+        }
+
+        // 2. Also try fetching the patient directly from backend PostgreSQL
+        const patientRes = await api.patient.getById(id)
+        if (patientRes && isMounted) {
+          setPatientData({
+            id: patientRes.patient_id || id,
+            name: patientRes.full_name || fallbackPatient.name,
+            age: patientRes.date_of_birth ? `${2026 - parseInt(patientRes.date_of_birth.split('-')[0])}` : fallbackPatient.age,
+            gender: patientRes.gender || fallbackPatient.gender,
+            phone: patientRes.phone || fallbackPatient.phone,
+            bloodGroup: patientRes.blood_group || fallbackPatient.bloodGroup,
+            dob: patientRes.date_of_birth || fallbackPatient.dob,
+            address: fallbackPatient.address,
+            conditions: (patientRes.conditions || []).map(c => c.condition) || fallbackPatient.conditions,
+            medications: (patientRes.medications || []).map(m => m.medication) || fallbackPatient.medications,
+            allergies: (patientRes.allergies || []).map(a => a.allergy) || fallbackPatient.allergies,
+            vitals: (patientRes.vitals && patientRes.vitals.length > 0) ? {
+              bp: `${patientRes.vitals[0].bp_systolic}/${patientRes.vitals[0].bp_diastolic}`,
+              pulse: patientRes.vitals[0].heart_rate,
+              spo2: patientRes.vitals[0].spo2,
+              temp: `${patientRes.vitals[0].temperature}°F`,
+              weight: `${patientRes.vitals[0].weight_kg} kg`,
+              height: `${patientRes.vitals[0].height_cm} cm`
+            } : fallbackPatient.vitals,
+            timeline: fallbackPatient.timeline,
+            documents: fallbackPatient.documents,
+            redFlag: fallbackPatient.redFlag,
+            consent: fallbackPatient.consent,
+            lastVisit: fallbackPatient.lastVisit
+          })
+        }
+
+        // 3. If no summary from assignment yet, fetch patient summaries
+        if (!summaryData) {
+          const summaries = await api.patient.getSummaries(id)
+          if (Array.isArray(summaries) && summaries.length > 0 && isMounted) {
+            const matched = summaryId ? summaries.find(s => s.summary_id === summaryId) : summaries[0]
+            if (matched) {
+              setSummaryData(matched)
+              if (matched.assignment) {
+                setAssignmentData(matched.assignment)
+                setConsultStatus(matched.assignment.status || 'Assigned')
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.warn('Could not load case from backend, using fallback data:', err)
+      } finally {
+        if (isMounted) setLoading(false)
+      }
+    }
+
+    loadCase()
+
+    return () => {
+      isMounted = false
+    }
+  }, [id, assignmentId, summaryId])
+
+  const handleUpdateStatus = async (newStatus) => {
+    const aid = assignmentData?.assignment_id || assignmentId
+    if (!aid || aid.startsWith('ASN-MOCK-')) {
+      setConsultStatus(newStatus)
+      return
+    }
+
+    setUpdatingStatus(true)
+    try {
+      await api.doctor.updateAssignmentStatus(aid, newStatus)
+      setConsultStatus(newStatus)
+    } catch (e) {
+      console.error('Failed to update status:', e)
+    } finally {
+      setUpdatingStatus(false)
+    }
+  }
+
+  const patient = patientData || fallbackPatient
 
   const tabs = [
     {
       key: 'ai-summary',
       label: '🤖 AI Case Summary',
-      content: <AICaseSummaryTab patient={patient} />,
+      content: <AICaseSummaryTab patient={patient} summary={summaryData} />,
     },
     {
       key: 'timeline',
@@ -664,14 +803,54 @@ export default function PatientCase() {
   return (
     <div className="p-6 space-y-5">
 
-      {/* Back button */}
-      <button
-        onClick={() => navigate('/doctor')}
-        className="flex items-center gap-2 text-sm text-slate-500 hover:text-brand-600 font-medium transition-colors"
-      >
-        <ArrowLeft size={15} />
-        Back to Dashboard
-      </button>
+      {/* Top action row */}
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+        <button
+          onClick={() => navigate('/doctor')}
+          className="flex items-center gap-2 text-sm text-slate-500 hover:text-brand-600 font-medium transition-colors w-fit"
+        >
+          <ArrowLeft size={15} />
+          Back to Assigned Queue
+        </button>
+
+        {/* Status Control Buttons */}
+        <div className="flex items-center gap-2">
+          <span className="text-xs text-slate-400">Consultation Status:</span>
+          <Badge
+            variant={consultStatus === 'Completed' ? 'success' : (consultStatus === 'In Consultation' ? 'purple' : 'blue')}
+            dot
+            className="text-xs font-semibold"
+          >
+            {consultStatus}
+          </Badge>
+
+          {consultStatus !== 'In Consultation' && consultStatus !== 'Completed' && (
+            <Button
+              variant="secondary"
+              size="sm"
+              disabled={updatingStatus}
+              onClick={() => handleUpdateStatus('In Consultation')}
+              className="text-xs"
+            >
+              <Stethoscope size={12} className="mr-1 text-purple-600" />
+              Begin Consultation
+            </Button>
+          )}
+
+          {consultStatus !== 'Completed' && (
+            <Button
+              variant="primary"
+              size="sm"
+              disabled={updatingStatus}
+              onClick={() => handleUpdateStatus('Completed')}
+              className="text-xs"
+            >
+              <CheckCircle2 size={12} className="mr-1 text-white" />
+              Mark Completed
+            </Button>
+          )}
+        </div>
+      </div>
 
       {/* Patient Header */}
       <div className="bg-white rounded-card shadow-card border border-slate-100">
@@ -686,18 +865,26 @@ export default function PatientCase() {
                   <h2 className="text-xl font-bold text-slate-900">{patient.name}</h2>
                   <CheckCircle size={16} className="text-emerald-500 flex-shrink-0" aria-label="Verified patient" />
                   <Badge variant="default" className="font-mono text-xs">{patient.id}</Badge>
+                  {summaryData && (
+                    <Badge variant="primary" className="text-xs font-mono">
+                      {summaryData.summary_id}
+                    </Badge>
+                  )}
                 </div>
                 <div className="flex flex-wrap items-center gap-3 text-sm text-slate-500 mb-3">
                   <span className="flex items-center gap-1"><User size={13} />{patient.age} years · {patient.gender}</span>
                   <span className="flex items-center gap-1"><Phone size={13} />{patient.phone}</span>
                   <span className="flex items-center gap-1"><Droplets size={13} />{patient.bloodGroup}</span>
-                  <span className="flex items-center gap-1"><Calendar size={13} />Last visit: {patient.lastVisit}</span>
+                  <span className="flex items-center gap-1"><Calendar size={13} />Last visit: {patient.lastVisit || 'Today'}</span>
                 </div>
 
                 {/* Red Flag + Consent */}
                 <div className="flex flex-wrap items-center gap-2">
-                  {patient.redFlag?.active && (
-                    <RedFlagBanner label={patient.redFlag.label} show />
+                  {(summaryData?.priority === 'Urgent' || patient.redFlag?.active) && (
+                    <RedFlagBanner
+                      label={summaryData?.red_flags?.title || patient.redFlag?.label || 'Urgent Clinical Priority'}
+                      show
+                    />
                   )}
                   <div className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold ${
                     patient.consent === 'Authorised'
@@ -705,8 +892,14 @@ export default function PatientCase() {
                       : 'bg-amber-100 text-amber-700 border border-amber-200'
                   }`}>
                     <Shield size={11} />
-                    Consent: {patient.consent}
+                    Consent: {patient.consent || 'Authorised'}
                   </div>
+                  {assignmentData && (
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 text-slate-700">
+                      <Building2 size={11} />
+                      Allocated by: {assignmentData.assigned_by || 'Hospital Administration'}
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -756,3 +949,4 @@ export default function PatientCase() {
     </div>
   )
 }
+

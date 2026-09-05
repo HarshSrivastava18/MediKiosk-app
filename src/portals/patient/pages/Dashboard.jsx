@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Home,
@@ -16,12 +17,17 @@ import {
   Zap,
   Users,
   Database,
+  CheckCircle2,
+  Clock,
+  UserCheck,
+  Sparkles,
 } from 'lucide-react'
 import Card, { CardHeader, CardBody } from '../../../components/ui/Card'
 import Button from '../../../components/ui/Button'
 import Badge from '../../../components/ui/Badge'
 import Avatar from '../../../components/ui/Avatar'
 import { useCurrentPatient } from '../useCurrentPatient'
+import { api } from '../../../lib/api'
 
 const quickActions = [
   {
@@ -73,11 +79,48 @@ const quickActions = [
 export default function PatientDashboard() {
   const navigate = useNavigate()
   const { patient } = useCurrentPatient()
+  const [allocationStatus, setAllocationStatus] = useState(null)
+  const [statusLoading, setStatusLoading] = useState(true)
+
+  useEffect(() => {
+    let isMounted = true
+    async function loadStatus() {
+      try {
+        const res = await api.patient.getSummaryStatus()
+        if (isMounted) setAllocationStatus(res)
+      } catch (e) {
+        console.warn('Could not load summary status:', e)
+      } finally {
+        if (isMounted) setStatusLoading(false)
+      }
+    }
+    loadStatus()
+    const interval = setInterval(loadStatus, 4000)
+    return () => {
+      isMounted = false
+      clearInterval(interval)
+    }
+  }, [patient.id])
 
   const firstName = patient.name.split(' ')[0] || 'User'
   const conditionsCount = patient.conditions ? patient.conditions.length : 0
   const medicationsCount = patient.medications ? patient.medications.length : 0
   const allergiesCount = patient.allergies ? patient.allergies.length : 0
+
+  const STAGES = [
+    { id: 'Draft', label: 'Draft' },
+    { id: 'Submitted', label: 'Submitted' },
+    { id: 'Pending Hospital Review', label: 'Pending Hospital Review' },
+    { id: 'Doctor Assigned', label: 'Doctor Assigned' },
+    { id: 'Consultation', label: 'Consultation' }
+  ]
+
+  const currentStatus = allocationStatus?.status || 'Draft'
+  let currentStageIndex = 0
+  if (currentStatus === 'Submitted') currentStageIndex = 1
+  else if (currentStatus === 'Pending Hospital Review') currentStageIndex = 2
+  else if (currentStatus === 'Doctor Assigned') currentStageIndex = 3
+  else if (['Consultation', 'In Consultation', 'Completed'].includes(currentStatus)) currentStageIndex = 4
 
   const healthSummaryRows = [
     { label: 'Conditions',  value: conditionsCount,  color: 'bg-red-50 border-red-200',    icon: Heart,     iconClass: 'text-red-500 bg-red-100',    valClass: 'text-red-700' },
@@ -117,6 +160,144 @@ export default function PatientDashboard() {
           </span>
         </div>
       </div>
+
+      {/* ── Real-Time Medical Summary & Doctor Allocation Status Card ── */}
+      <Card className="border-blue-200 bg-gradient-to-r from-blue-50/50 via-white to-indigo-50/40 shadow-card">
+        <CardHeader>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+            <div className="flex items-center gap-2.5">
+              <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center">
+                <Stethoscope size={16} />
+              </div>
+              <div>
+                <h2 className="text-sm font-bold text-slate-800">
+                  Medical Summary &amp; Doctor Allocation Status
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Real-time clinical triage &amp; hospital review pipeline
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <Badge
+                variant={
+                  currentStatus === 'Doctor Assigned'
+                    ? 'success'
+                    : currentStatus === 'Pending Hospital Review'
+                    ? 'warning'
+                    : 'default'
+                }
+                className="font-bold text-xs"
+              >
+                {currentStatus}
+              </Badge>
+              {allocationStatus?.summary_id && (
+                <span className="font-mono text-xs text-slate-500 bg-slate-100 px-2 py-0.5 rounded">
+                  {allocationStatus.summary_id}
+                </span>
+              )}
+            </div>
+          </div>
+        </CardHeader>
+        <CardBody className="space-y-4">
+          {/* Stepper progress */}
+          <div className="grid grid-cols-5 gap-1 pt-1 pb-3">
+            {STAGES.map((stg, i) => {
+              const isDone = i < currentStageIndex
+              const isCurrent = i === currentStageIndex
+              return (
+                <div key={stg.id} className="flex flex-col items-center text-center">
+                  <div className="w-full flex items-center">
+                    <div className={`flex-1 h-1 ${i === 0 ? 'invisible' : isDone || isCurrent ? 'bg-blue-600' : 'bg-slate-200'}`} />
+                    <div
+                      className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold transition-all ${
+                        isDone
+                          ? 'bg-emerald-500 text-white'
+                          : isCurrent
+                          ? 'bg-blue-600 text-white ring-4 ring-blue-100'
+                          : 'bg-slate-100 text-slate-400'
+                      }`}
+                    >
+                      {isDone ? <CheckCircle2 size={14} /> : i + 1}
+                    </div>
+                    <div className={`flex-1 h-1 ${i === STAGES.length - 1 ? 'invisible' : isDone ? 'bg-blue-600' : 'bg-slate-200'}`} />
+                  </div>
+                  <span className={`text-[11px] mt-2 font-medium leading-tight ${isCurrent ? 'text-blue-700 font-bold' : isDone ? 'text-slate-700' : 'text-slate-400'}`}>
+                    {stg.label}
+                  </span>
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Allocation Detail Block */}
+          {allocationStatus?.doctor_name ? (
+            <div className="bg-white border border-emerald-200 rounded-xl p-4 shadow-xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
+                <div className="w-12 h-12 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center flex-shrink-0">
+                  <UserCheck size={24} />
+                </div>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="text-base font-bold text-slate-800">{allocationStatus.doctor_name}</h3>
+                    <Badge variant="success" className="text-[10px]">Allocated</Badge>
+                  </div>
+                  <p className="text-xs font-medium text-emerald-700 mt-0.5">
+                    {allocationStatus.doctor_specialty || 'Specialist'} · {allocationStatus.doctor_department || 'Outpatient Department'}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5 flex items-center gap-1.5">
+                    <Building2 size={12} className="text-slate-400" />
+                    <span>{allocationStatus.hospital_name || 'Hospital Network'}</span>
+                    {allocationStatus.assignment_timestamp && (
+                      <>
+                        <span>•</span>
+                        <Clock size={12} className="text-slate-400" />
+                        <span>{new Date(allocationStatus.assignment_timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                      </>
+                    )}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 self-end sm:self-center">
+                <Button
+                  size="sm"
+                  variant="primary"
+                  onClick={() => navigate('/patient/my-case')}
+                >
+                  View Case Summary
+                </Button>
+              </div>
+            </div>
+          ) : allocationStatus?.status === 'Pending Hospital Review' ? (
+            <div className="bg-amber-50 border border-amber-200 rounded-xl p-3.5 flex items-start gap-3">
+              <Clock size={18} className="text-amber-600 flex-shrink-0 mt-0.5 animate-spin" />
+              <div className="text-xs">
+                <p className="font-bold text-amber-900">
+                  Case Under Hospital Review
+                </p>
+                <p className="text-amber-700 mt-0.5">
+                  Your medical summary has been transmitted to {allocationStatus.hospital_name || 'the Hospital'}. Clinical staff is reviewing your symptoms and will allocate a specialist physician shortly.
+                </p>
+              </div>
+            </div>
+          ) : (
+            <div className="bg-slate-50 border border-slate-200 rounded-xl p-3.5 flex items-center justify-between">
+              <div className="text-xs text-slate-600">
+                <span className="font-semibold text-slate-800">No active hospital submission. </span>
+                Generate an AI-powered case summary before visiting the hospital.
+              </div>
+              <Button
+                size="sm"
+                variant="secondary"
+                onClick={() => navigate('/patient/my-case')}
+              >
+                Start Case Intake →
+              </Button>
+            </div>
+          )}
+        </CardBody>
+      </Card>
+
 
       {/* ── Quick action cards ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
